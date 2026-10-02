@@ -1,0 +1,44 @@
+name: Application Release candidate
+
+# Explicit candidate preparation; publication requires the application's release gate.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: application-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: json, mbstring, pdo_mysql, sodium
+          tools: composer:2.10.2
+          coverage: none
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.6
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.2'
+      - name: Prepare the committed APP through its existing release engine
+        run: ./scripts/package-release.sh "$RUNNER_TEMP/application-release"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: application-release-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/application-release.tar.gz
+            ${{ runner.temp }}/application-release.tar.gz.manifest.json
+          if-no-files-found: error
+          retention-days: 7

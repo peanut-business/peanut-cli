@@ -1,0 +1,22 @@
+{
+    "schema_version": 1,
+    "protocol": "peanut.recipe.v1",
+    "recipe": "github-ci",
+    "version": "1.0.0",
+    "files": [
+        {
+            "path": ".github/workflows/ci.yml",
+            "classification": "managed",
+            "owner": "recipe:github-ci",
+            "mode": 420,
+            "sha256": "939e9e8bb173110514fd3a1891dc483ced3d946e9f68fb2189a033a146b183be"
+        },
+        {
+            "path": ".github/workflows/release.yml",
+            "classification": "managed",
+            "owner": "recipe:github-ci",
+            "mode": 420,
+            "sha256": "5dc54a1a1a4f38faf42b8987732aa6958042e4b244c784c65a1694e274dca040"
+        }
+    ]
+}
