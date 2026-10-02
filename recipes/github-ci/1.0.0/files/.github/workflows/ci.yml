@@ -1,0 +1,70 @@
+name: Application CI
+
+# Run the required checks explicitly at a coherent development/release gate.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  layout:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify shipped application contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          for path in \
+            .peanut/application-manifest.json \
+            resources/project-resources.json \
+            server/composer.json server/composer.lock server/database/install.php \
+            scripts/project-composer scripts/upgrade \
+            web/package.json web/pnpm-lock.yaml; do
+            test -f "$path"
+          done
+          for client in platform pc uniapp; do
+            if test -d "$client"; then
+              test -f "$client/package.json"
+              test -f "$client/package-lock.json"
+            fi
+          done
+
+  php:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: json, mbstring, pdo_mysql, sodium
+          coverage: none
+      - name: Validate locked backend
+        working-directory: server
+        run: |
+          composer validate
+          composer install --no-interaction --no-progress --prefer-dist --no-scripts
+          find app database -type f -name '*.php' -print0 | xargs -0 -n1 php -l
+
+  clients:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.2'
+      - name: Build shipped clients from locked dependencies
+        shell: bash
+        env:
+          HUSKY: '0'
+        run: |
+          set -euo pipefail
+          (cd web && pnpm install --frozen-lockfile && pnpm run build)
+          if test -d platform; then (cd platform && npm ci && npm run build); fi
+          if test -d pc; then (cd pc && npm ci && npm run build); fi
+          if test -d uniapp; then (cd uniapp && npm ci && npm run build:h5); fi

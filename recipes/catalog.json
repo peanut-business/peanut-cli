@@ -1,0 +1,7 @@
+{
+    "schema_version": 1,
+    "protocol": "peanut.recipe-catalog.v1",
+    "recipes": {
+        "github-ci": "1.0.0"
+    }
+}

@@ -1,0 +1,24 @@
+{
+  "name": "@peanut/cli",
+  "version": "0.1.0",
+  "description": "Independent developer CLI and tooling for Peanut products.",
+  "type": "module",
+  "bin": {
+    "peanut": "bin/peanut.js"
+  },
+  "files": ["bin", "lib", "recipes", "README.md"],
+  "scripts": {
+    "check": "node --check bin/peanut.js && node --check lib/protocol.js && node --check lib/recipe-manager.js",
+    "test": "node --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/peanut-business/peanut-cli.git"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
