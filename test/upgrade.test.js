@@ -20,22 +20,32 @@ const application = { schema_version: 2, protocol: 'peanut.application-scaffold.
 const url = (name) => `https://github.com/${repository}/releases/download/v${version}/${name}`;
 const release = { draft: false, prerelease: true, tag_name: `v${version}`, assets: [filename, filename + '.manifest.json'].map((name) => ({ name, browser_download_url: url(name) })) };
 
-function fixture(t, mode = 'ready') {
+function fixture(t, mode = 'ready', sourceOverrides = {}) {
     const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'peanut-upgrade-'));
     t.after(() => fs.rmSync(temp, { recursive: true, force: true }));
     const app = path.join(temp, 'app');
     fs.mkdirSync(path.join(app, '.peanut'), { recursive: true });
-    fs.mkdirSync(path.join(app, 'scripts'));
+    fs.mkdirSync(path.join(app, 'server/vendor'), { recursive: true });
+    fs.writeFileSync(path.join(app, 'server/vendor/autoload.php'), '<?php\n');
+    const sourceRoot = path.join(temp, 'source');
+    fs.mkdirSync(path.join(sourceRoot, 'scripts'), { recursive: true });
+    fs.mkdirSync(path.join(sourceRoot, 'scaffold'));
+    const sourceInventory = JSON.stringify({ protocol: 'fixture-inventory' });
+    fs.writeFileSync(path.join(sourceRoot, 'scaffold/application-template-inventory.json'), sourceInventory);
     fs.writeFileSync(path.join(app, '.peanut/application-manifest.json'), JSON.stringify(application));
     fs.writeFileSync(path.join(app, 'custom.txt'), 'downstream-owned');
-    fs.writeFileSync(path.join(app, 'scripts/scaffold-upgrade'), `<?php
+    fs.writeFileSync(path.join(sourceRoot, 'scripts/scaffold-upgrade'), `<?php
 $options = [];
 foreach (array_slice($argv, 2) as $arg) { preg_match('/^--([^=]+)=(.*)$/', $arg, $m); $options[$m[1]] = $m[2]; }
 $root = $options['project-root'];
 $command = $argv[1];
 file_put_contents($root . '/calls.jsonl', json_encode([$command, $options]) . "\\n", FILE_APPEND);
 if ($command === 'preflight' || $command === 'resolve') {
-    $plan = ['protocol' => 'peanut.scaffold-upgrade-plan.v2', 'status' => $command === 'resolve' ? 'ready' : '${mode}', 'plan_sha256' => 'sha256:' . str_repeat('d', 64), 'plan_path' => '.peanut/upgrades/plans/fixture.json', 'actions' => [['path' => 'managed.txt', 'action' => 'conflict']]];
+    if ($command === 'preflight') {
+        $source = json_decode(file_get_contents($options['package'] . '/upgrade-manifest.json'), true)['build_source'];
+        $identity = ['to' => ['version' => '${version}', 'source_commit' => $source['commit'], 'source_tree' => $source['tree'], 'inventory_sha256' => $source['inventory_sha256']]];
+    } else { $identity = json_decode(file_get_contents($options['plan']), true)['identity']; }
+    $plan = ['protocol' => 'peanut.scaffold-upgrade-plan.v2', 'status' => $command === 'resolve' ? 'ready' : '${mode}', 'plan_sha256' => 'sha256:' . str_repeat('d', 64), 'plan_path' => '.peanut/upgrades/plans/' . ($command === 'resolve' ? 'resolved' : 'fixture') . '.json', 'identity' => $identity, 'actions' => [['path' => 'managed.txt', 'action' => 'conflict']]];
     @mkdir($root . '/.peanut/upgrades/plans', 0700, true);
     file_put_contents($root . '/' . $plan['plan_path'], json_encode($plan));
     echo json_encode($plan);
@@ -43,6 +53,23 @@ if ($command === 'preflight' || $command === 'resolve') {
 }
 echo json_encode(['status' => ['apply' => 'applied', 'verify' => 'verified', 'recover' => 'recovered'][$command]]);
 `);
+    const git = (...args) => {
+        const result = spawnSync('git', ['-C', sourceRoot, ...args], { encoding: 'utf8' });
+        assert.equal(result.status, 0, result.stderr);
+        return result.stdout.trim();
+    };
+    git('init', '-b', 'dev');
+    git('config', 'user.email', 'test@example.invalid');
+    git('config', 'user.name', 'Peanut Test');
+    git('add', '.');
+    git('commit', '-m', 'native source fixture');
+    git('tag', `v${version}`);
+    const source = { commit: git('rev-parse', 'HEAD'), tree: git('rev-parse', 'HEAD^{tree}'), inventory_sha256: sha256(sourceInventory), ...sourceOverrides };
+    const previous = Object.fromEntries(['GIT_CONFIG_COUNT', 'GIT_CONFIG_KEY_0', 'GIT_CONFIG_VALUE_0'].map((key) => [key, process.env[key]]));
+    process.env.GIT_CONFIG_COUNT = '1';
+    process.env.GIT_CONFIG_KEY_0 = `url.${sourceRoot}.insteadOf`;
+    process.env.GIT_CONFIG_VALUE_0 = `https://github.com/${repository}.git`;
+    t.after(() => { for (const [key, value] of Object.entries(previous)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; } });
     const packagePath = path.join(temp, archiveRoot);
     fs.mkdirSync(path.join(packagePath, 'META-INF'), { recursive: true });
     const manifest = JSON.stringify({ schema_version: 1, protocol: 'peanut.edition-upgrade-package.v1', target: { version }, edition: { name: 'standalone' }, build_source: source });
@@ -62,11 +89,11 @@ echo json_encode(['status' => ['apply' => 'applied', 'verify' => 'verified', 're
         return { ok: true, status: 200, json: async () => body, arrayBuffer: async () => body };
     };
     const nativeCalls = () => fs.existsSync(path.join(app, 'calls.jsonl')) ? fs.readFileSync(path.join(app, 'calls.jsonl'), 'utf8').trim().split('\n').map(JSON.parse) : [];
-    return { app, temp, fetcher, calls, artifact, archive, nativeCalls };
+    return { app, temp, fetcher, calls, artifact, archive, nativeCalls, source };
 }
 
 test('upgrade check discovers public release source without changing APP or fetching archive', async (t) => {
-    const { app, fetcher, calls, nativeCalls } = fixture(t);
+    const { app, fetcher, calls, nativeCalls, source } = fixture(t);
     const before = fs.readFileSync(path.join(app, '.peanut/application-manifest.json'));
     const result = await upgradeProject({ path: app, check: true }, fetcher);
     assert.equal(result.status, 'available');
@@ -110,6 +137,10 @@ test('plan downloads authenticated transport and delegates only native preflight
     const { app, fetcher, nativeCalls, artifact } = fixture(t);
     const result = await upgradeProject({ path: app, plan: true }, fetcher);
     assert.equal(result.status, 'ready');
+    assert.equal(fs.existsSync(path.join(app, 'scripts/scaffold-upgrade')), false);
+    const bindings = path.join(app, '.peanut/upgrades/engine-bindings');
+    assert.equal(fs.readdirSync(bindings).length, 1);
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(bindings, fs.readdirSync(bindings)[0]))).selection.source, artifact.source);
     assert.deepEqual(nativeCalls().map(([command]) => command), ['preflight']);
     assert.ok(nativeCalls()[0][1].package.endsWith(`${artifact.archive.sha256}/${archiveRoot}`));
     assert.equal(fs.readFileSync(path.join(app, 'custom.txt'), 'utf8'), 'downstream-owned');
@@ -133,7 +164,7 @@ test('blocked conflicts require explicit native resolution and support native re
     assert.deepEqual(nativeCalls().map(([command]) => command), ['preflight']);
     await upgradeProject({ path: app, applyPlan: result.plan.plan_path, confirmPlanSha256: result.plan.plan_sha256, preservePaths: 'managed.txt', replacePaths: '-' });
     assert.deepEqual(nativeCalls().map(([command]) => command), ['preflight', 'resolve', 'apply', 'verify']);
-    await upgradeProject({ path: app, recoverPlan: result.plan.plan_path });
+    await upgradeProject({ path: app, recoverPlan: '.peanut/upgrades/plans/resolved.json' });
     assert.equal(nativeCalls().at(-1)[0], 'recover');
     await assert.rejects(upgradeProject({ path: app, applyPlan: '../outside.json' }), /PLAN_OUTSIDE_STATE/);
 });
@@ -165,4 +196,35 @@ test('upgrade parser rejects incompatible modes and missing option values before
         assert.equal(result.status, 2);
         assert.match(result.stderr, /UPGRADE_ARGUMENTS_INVALID/);
     }
+});
+
+test('saved plans reject changed source bytes, hidden untracked runtime and plan tampering', async (t) => {
+    const { app, fetcher, artifact, nativeCalls } = fixture(t);
+    const result = await upgradeProject({ path: app, plan: true }, fetcher);
+    const engine = path.join(app, '.peanut/upgrades/engines', artifact.source.commit);
+    const entry = path.join(engine, 'scripts/scaffold-upgrade');
+    const original = fs.readFileSync(entry);
+    spawnSync('git', ['-C', engine, 'update-index', '--assume-unchanged', 'scripts/scaffold-upgrade']);
+    fs.appendFileSync(entry, '\n// changed execution bytes');
+    await assert.rejects(upgradeProject({ path: app, applyPlan: result.plan.plan_path }), /ENGINE_CONTENT_MISMATCH/);
+    fs.writeFileSync(entry, original);
+    fs.writeFileSync(path.join(engine, 'scripts/hidden.php'), '<?php');
+    await assert.rejects(upgradeProject({ path: app, recoverPlan: result.plan.plan_path }), /ENGINE_UNTRACKED_CONTENT/);
+    fs.unlinkSync(path.join(engine, 'scripts/hidden.php'));
+    fs.unlinkSync(entry);
+    fs.symlinkSync(path.join(app, 'custom.txt'), entry);
+    await assert.rejects(upgradeProject({ path: app, applyPlan: result.plan.plan_path }), /SYMLINK_REJECTED/);
+    fs.unlinkSync(entry);
+    fs.writeFileSync(entry, original);
+    fs.appendFileSync(path.join(app, result.plan.plan_path), ' ');
+    await assert.rejects(upgradeProject({ path: app, recoverPlan: result.plan.plan_path }), /PLAN_BINDING_MISMATCH/);
+    assert.deepEqual(nativeCalls().map(([command]) => command), ['preflight']);
+});
+
+test('public artifact source mismatch rejects fixed Git checkout before native execution', async (t) => {
+    const { app, fetcher, nativeCalls } = fixture(t, 'ready', { tree: 'f'.repeat(40) });
+    // Keep archive/manifest binding valid; the fixed public Git tree must still
+    // match the selected artifact identity before a native command can execute.
+    await assert.rejects(upgradeProject({ path: app, plan: true }, fetcher), /ENGINE_IDENTITY_MISMATCH/);
+    assert.deepEqual(nativeCalls(), []);
 });
