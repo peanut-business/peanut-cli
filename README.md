@@ -60,17 +60,45 @@ npm run check
 node bin/peanut.js --version
 ```
 
-A checkout can be installed locally for CLI testing with `npm install -g .`. The team development policy is to use the newest approved CLI build from `dev`; public npm publication and GitHub Release are separate release gates, and this repository does not claim `@peanut/cli` is already published.
+A checkout can be installed locally for CLI testing with `npm install -g .`. The team development policy is to use the newest approved CLI build from `dev`. Public distribution uses the official GitHub Release package; the npm registry channel is not configured and `@peanut/cli` is not claimed to be published there.
 
 ## Public release contract
 
 `.github/workflows/release.yml` publishes only an annotated `vX.Y.Z` or `vX.Y.Z-rc.N` tag at the current `origin/main` commit in `peanut-business/peanut-cli`. The tag version must equal `@peanut/cli`'s package version and its repository/public package identity. The GitHub-hosted job uses Node `22.23.2`, npm `11.15.0` and `npm run check`.
 
-The job packs a temporary archive of that fixed source, adding only the actual source commit as `package.json.gitHead`. It verifies every declared package file against the source bytes and modes, including `bin/peanut.js` mode `0755`, and records the archive SHA-256, SHA-512 integrity and per-file SHA-256 in `cli-release-source.json`. `gitHead` records source identity; it is not a signature or verification of npm provenance.
+The job packs a temporary archive of that fixed source, adding only the actual source commit as `package.json.gitHead`. It verifies every declared package file against the source bytes and modes, including `bin/peanut.js` mode `0755`, and records the archive SHA-256, SHA-512 SRI and per-file SHA-256 in `cli-release-source.json`. `gitHead` records source identity; content digests prove the selected bytes, not publisher authentication.
 
-Publishing uses npm OIDC with `id-token: write`, without npm token configuration. The trusted publisher must separately authorize `@peanut/cli` for repository `peanut-business/peanut-cli`, workflow filename `release.yml`, direct publish permission and no GitHub Environment. [npm trusted publishing](https://docs.npmjs.com/trusted-publishers/) and [npm trust](https://docs.npmjs.com/cli/v11/commands/npm-trust/) describe the account and package prerequisites. A missing package requires a separately authorized bootstrap before trust binding; committing this workflow does not establish the namespace, package or trust relationship.
+The workflow creates a GitHub Release carrying that exact tarball and source receipt, then downloads both assets and compares their bytes. An existing release must have the same tag, published/prerelease state and exactly matching assets; it is never overwritten. Stable tags create formal releases and `-rc.N` tags create prereleases. Failed or uncertain publication must be inspected before retrying. This workflow does not publish to npm or require npm account credentials; registry publication and trust setup remain a separate future channel decision.
 
-Stable tags publish to `latest`; release candidates publish to `rc`. An existing version is accepted only when the exact registry package/version/repository/`gitHead`/`dist.integrity` match and its downloaded tarball equals this run's pack. A different or unverifiable version stops the workflow. Only after registry verification does it create a GitHub Release with the exact tarball and source receipt; an existing GitHub Release must have matching metadata and identical assets. Published versions and assets remain immutable. An npm publication followed by a verification or GitHub failure is partial success and must be inspected before retrying.
+For the published `v0.3.0` release, download the fixed official assets, bind the receipt to the annotated tag's commit and verify both SHA-256 and SRI before installing. These commands require Node.js, npm, Git and curl:
+
+```sh
+set -euo pipefail
+cli_download="$(mktemp -d)"
+cli_release='https://github.com/peanut-business/peanut-cli/releases/download/v0.3.0'
+curl --fail --location "$cli_release/peanut-cli-0.3.0.tgz" --output "$cli_download/peanut-cli-0.3.0.tgz"
+curl --fail --location "$cli_release/cli-release-source.json" --output "$cli_download/cli-release-source.json"
+cli_source_commit="$(git ls-remote https://github.com/peanut-business/peanut-cli.git 'refs/tags/v0.3.0^{}' | awk '{print $1}')"
+node - "$cli_download" "$cli_source_commit" <<'NODE'
+const fs = require('node:fs');
+const crypto = require('node:crypto');
+const directory = process.argv[2], commit = process.argv[3];
+const receipt = JSON.parse(fs.readFileSync(`${directory}/cli-release-source.json`, 'utf8'));
+const archive = fs.readFileSync(`${directory}/peanut-cli-0.3.0.tgz`);
+if (!/^[a-f0-9]{40}$/.test(commit) || receipt.schema_version !== 1
+  || receipt.package !== '@peanut/cli' || receipt.version !== '0.3.0'
+  || receipt.repository !== 'https://github.com/peanut-business/peanut-cli.git'
+  || receipt.tag !== 'v0.3.0' || receipt.source_commit !== commit
+  || receipt.filename !== 'peanut-cli-0.3.0.tgz'
+  || receipt.sha256 !== crypto.createHash('sha256').update(archive).digest('hex')
+  || receipt.integrity !== `sha512-${crypto.createHash('sha512').update(archive).digest('base64')}`) {
+  throw new Error('Official release source or archive digest differs; do not install');
+}
+console.log(`Verified @peanut/cli@0.3.0 from ${commit}`);
+NODE
+npm install --global "$cli_download/peanut-cli-0.3.0.tgz"
+peanut --version
+```
 
 ## Branches
 

@@ -7,7 +7,6 @@ on:
 
 permissions:
   contents: write
-  id-token: write
 
 concurrency:
   group: peanut-cli-release-${{ github.ref }}
@@ -61,7 +60,7 @@ jobs:
             throw new Error('Tagged package identity, public contents or source contract differs');
           }
           NODE
-      - name: Use npm with trusted publishing support
+      - name: Use the pinned npm pack tool
         run: npm install --global npm@11.15.0
       - name: Check CLI syntax
         run: npm run check
@@ -127,54 +126,7 @@ jobs:
               env.write(f'CLI_TARBALL={filename}\nCLI_INTEGRITY={integrity}\n')
           print(f'Verified {len(records)} fixed-source files, bin mode 0755, {integrity}')
           PY
-      - name: Publish or verify the exact public package
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          version="${GITHUB_REF_NAME#v}"
-          lookup() {
-            local status
-            status="$(curl --silent --show-error --output "$RUNNER_TEMP/npm-version.json" \
-              --write-out '%{http_code}' "https://registry.npmjs.org/@peanut%2fcli/$version")" || return 1
-            if [[ "$status" == 404 ]]; then return 4; fi
-            [[ "$status" == 200 ]] || { echo "Registry returned HTTP $status" >&2; return 1; }
-            node - "$RUNNER_TEMP/npm-version.json" <<'NODE'
-          const fs = require('node:fs');
-          const p = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
-          if (p.name !== '@peanut/cli' || p.version !== process.env.GITHUB_REF_NAME.slice(1)
-            || p.gitHead !== process.env.GITHUB_SHA || p.repository?.type !== 'git'
-            || !['https://github.com/peanut-business/peanut-cli.git', 'git+https://github.com/peanut-business/peanut-cli.git'].includes(p.repository?.url)
-            || p.dist?.integrity !== process.env.CLI_INTEGRITY) {
-            throw new Error('Registry source identity or exact pack integrity differs; refusing reuse');
-          }
-          const url = new URL(p.dist.tarball);
-          if (url.protocol !== 'https:' || url.hostname !== 'registry.npmjs.org' || url.username || url.password || url.port) {
-            throw new Error('Registry tarball origin differs');
-          }
-          NODE
-          }
-          if lookup; then
-            echo 'Exact version already exists; source identity and integrity matched' | tee -a "$GITHUB_STEP_SUMMARY"
-          else
-            status=$?
-            [[ "$status" == 4 ]] || exit "$status"
-            dist_tag=latest
-            if [[ "$version" == *-rc.* ]]; then dist_tag=rc; fi
-            npm publish "$RUNNER_TEMP/$CLI_TARBALL" --access public --tag "$dist_tag" --registry=https://registry.npmjs.org/
-            echo 'npm publish completed; registry verification pending' | tee -a "$GITHUB_STEP_SUMMARY"
-            verified=false
-            for attempt in {1..30}; do
-              if lookup; then verified=true; break; else status=$?; fi
-              [[ "$status" == 4 ]] || exit "$status"
-              if [[ "$attempt" -lt 30 ]]; then sleep 10; fi
-            done
-            [[ "$verified" == true ]] || { echo 'Published version is not yet verifiable; stop before GitHub Release' >&2; exit 1; }
-          fi
-          tarball_url="$(node -p "JSON.parse(require('node:fs').readFileSync(process.argv[1], 'utf8')).dist.tarball" "$RUNNER_TEMP/npm-version.json")"
-          curl --fail --silent --show-error "$tarball_url" --output "$RUNNER_TEMP/registry-cli.tgz"
-          cmp "$RUNNER_TEMP/$CLI_TARBALL" "$RUNNER_TEMP/registry-cli.tgz"
-          echo "Public @peanut/cli@$version source and tarball verified: $CLI_INTEGRITY" | tee -a "$GITHUB_STEP_SUMMARY"
-      - name: Publish GitHub Release after exact registry verification
+      - name: Publish and verify the immutable GitHub Release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -192,8 +144,14 @@ jobs:
             gh release download "$GITHUB_REF_NAME" --pattern "$CLI_TARBALL" --pattern cli-release-source.json --dir "$RUNNER_TEMP/existing-release"
             cmp "$RUNNER_TEMP/$CLI_TARBALL" "$RUNNER_TEMP/existing-release/$CLI_TARBALL"
             cmp "$RUNNER_TEMP/cli-release-source.json" "$RUNNER_TEMP/existing-release/cli-release-source.json"
+            echo 'Existing GitHub Release assets exactly match this fixed source' | tee -a "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           gh release create "$GITHUB_REF_NAME" --verify-tag "${flags[@]}" \
             "$RUNNER_TEMP/$CLI_TARBALL" "$RUNNER_TEMP/cli-release-source.json" \
             --title "Peanut CLI $GITHUB_REF_NAME" --generate-notes
+          mkdir "$RUNNER_TEMP/published-release"
+          gh release download "$GITHUB_REF_NAME" --pattern "$CLI_TARBALL" --pattern cli-release-source.json --dir "$RUNNER_TEMP/published-release"
+          cmp "$RUNNER_TEMP/$CLI_TARBALL" "$RUNNER_TEMP/published-release/$CLI_TARBALL"
+          cmp "$RUNNER_TEMP/cli-release-source.json" "$RUNNER_TEMP/published-release/cli-release-source.json"
+          echo "GitHub Release assets verified: $CLI_INTEGRITY" | tee -a "$GITHUB_STEP_SUMMARY"
