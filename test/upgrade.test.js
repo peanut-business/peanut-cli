@@ -92,9 +92,16 @@ test('already-current baseline validates release identity without requiring upgr
     const manifest = { version, tag: `v${version}`, repository: `https://github.com/${repository}`, commit: source.commit, candidate_lock: { sha256: sha256(lock) } };
     const baseline = { ...release, assets: ['RELEASE_MANIFEST.json', 'RELEASE_CANDIDATE_LOCK.json'].map((name) => ({ name, browser_download_url: url(name) })) };
     const fetcher = async (address) => ({ ok: true, json: async () => address === url('RELEASE_MANIFEST.json') ? manifest : baseline, arrayBuffer: async () => lock });
-    const result = await discoverUpgrade({ ...application, template: { version } }, { ref: version }, fetcher);
+    const template = { version, source_commit: source.commit, source_tree: source.tree };
+    const result = await discoverUpgrade({ ...application, template }, { ref: version }, fetcher);
     assert.equal(result.status, 'up_to_date');
     assert.deepEqual(result.source, source);
+    const different = await discoverUpgrade({ ...application, template: { ...template, source_commit: 'f'.repeat(40) } }, { ref: version }, fetcher);
+    assert.equal(different.status, 'source_identity_mismatch');
+    assert.equal(different.source_alignment, 'different');
+    const unknown = await discoverUpgrade({ ...application, template: { version } }, { ref: version }, fetcher);
+    assert.equal(unknown.status, 'version_current');
+    assert.equal(unknown.source_alignment, 'unknown');
     manifest.candidate_lock.sha256 = 'f'.repeat(64);
     await assert.rejects(discoverUpgrade({ ...application, template: { version } }, { ref: version }, fetcher), /RELEASE_IDENTITY_INVALID/);
 });

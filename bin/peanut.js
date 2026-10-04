@@ -119,7 +119,7 @@ async function main() {
     if (process.argv[2] === 'upgrade') {
         const result = await upgradeProject(parseUpgradeArguments(process.argv.slice(3)));
         output(result);
-        return result.status === 'blocked' ? 1 : 0;
+        return ['blocked', 'source_identity_mismatch'].includes(result.status) ? 1 : 0;
     }
     const parsed = parseArguments(process.argv.slice(2));
     if (parsed.special === 'help') { usage(); return 0; }
