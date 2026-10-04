@@ -92,7 +92,7 @@ function* walk(root, prefix = '') {
 test('version and help work without an application checkout', () => {
     let result = spawnSync(process.execPath, [BIN, '--version'], { encoding: 'utf8' });
     assert.equal(result.status, 0);
-    assert.equal(result.stdout.trim(), 'Peanut CLI 0.1.0');
+    assert.equal(result.stdout.trim(), 'Peanut CLI 0.3.0');
     result = spawnSync(process.execPath, [BIN, '--help'], { encoding: 'utf8' });
     assert.equal(result.status, 0);
     assert.match(result.stdout, /recipe add github-ci/);
@@ -223,7 +223,50 @@ test('corrupt bundle is rejected before application writes', (t) => {
     assert.equal(fs.existsSync(workflow(app)), false);
 });
 
-test('unimplemented create never reports placeholder success', (t) => {
-    const { app } = createFixture(t);
-    assert.match(cli(app, ['create'], 2), /PEANUT_COMMAND_UNSUPPORTED/);
+test('create stages a project from an explicit git source and records source identity', (t) => {
+    const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'peanut-cli-create-'));
+    t.after(() => fs.rmSync(temp, { recursive: true, force: true }));
+    const source = path.join(temp, 'source');
+    fs.mkdirSync(path.join(source, 'scripts'), { recursive: true });
+    fs.mkdirSync(path.join(source, 'server/vendor'), { recursive: true });
+    fs.writeFileSync(path.join(source, 'server/vendor/autoload.php'), '<?php\n');
+    fs.writeFileSync(path.join(source, 'scripts/create-app'), `<?php
+$options = [];
+foreach (array_slice($argv, 1) as $arg) {
+    if (preg_match('/^--([^=]+)=(.*)$/', $arg, $m)) $options[$m[1]] = $m[2];
+}
+mkdir($options['target'] . '/.peanut', 0775, true);
+file_put_contents($options['target'] . '/.peanut/application-manifest.json', json_encode(['ok' => true]));
+echo json_encode([
+    'status' => 'created',
+    'target' => $options['target'],
+    'template_version' => '4.0.0-rc.18',
+    'application_version' => '0.1.0',
+    'profile' => $options['profile'] ?? 'standard',
+    'edition' => $options['edition'],
+    'source_commit' => str_repeat('a', 40),
+    'generation_source_commit' => str_repeat('b', 40),
+    'managed_tree_sha256' => str_repeat('c', 64),
+    'app_owned_tree_sha256' => str_repeat('d', 64),
+]);
+`);
+    spawnSync('git', ['init', '-b', 'dev'], { cwd: source, encoding: 'utf8' });
+    spawnSync('git', ['config', 'user.email', 'test@example.invalid'], { cwd: source });
+    spawnSync('git', ['config', 'user.name', 'Peanut Test'], { cwd: source });
+    spawnSync('git', ['add', '.'], { cwd: source });
+    spawnSync('git', ['commit', '-m', 'fixture'], { cwd: source, encoding: 'utf8' });
+
+    const target = path.join(temp, 'created-app');
+    const result = spawnSync(process.execPath, [
+        BIN, 'create', target,
+        '--name', 'Created App', '--slug', 'created-app', '--package', 'example/created-app',
+        '--edition', 'standalone', '--source', source, '--ref', 'dev',
+    ], { encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr + result.stdout);
+    const output = JSON.parse(result.stdout);
+    assert.equal(output.status, 'created');
+    assert.equal(output.source.ref, 'dev');
+    assert.match(output.source.commit, /^[0-9a-f]{40}$/);
+    assert.equal(fs.existsSync(path.join(target, '.peanut/application-manifest.json')), true);
+    assert.equal([...fs.readdirSync(temp)].some((name) => name.startsWith('.created-app.peanut-create-')), false);
 });

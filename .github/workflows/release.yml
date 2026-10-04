@@ -1,0 +1,157 @@
+name: Peanut CLI release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: peanut-cli-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.repository == 'peanut-business/peanut-cli'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.23.2'
+          package-manager-cache: false
+      - name: Require the annotated tag and exact package on current main
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          [[ "$GITHUB_REF_NAME" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-rc\.([1-9][0-9]*))?$ ]] || {
+            echo 'Expected vX.Y.Z or vX.Y.Z-rc.N' >&2; exit 1;
+          }
+          [[ "$(git remote get-url origin)" == 'https://github.com/peanut-business/peanut-cli' \
+            || "$(git remote get-url origin)" == 'https://github.com/peanut-business/peanut-cli.git' ]] || exit 1
+          git fetch --force --no-tags origin "+refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
+          [[ "$(git cat-file -t "refs/tags/$GITHUB_REF_NAME")" == tag ]] || {
+            echo 'Release tag must be annotated' >&2; exit 1;
+          }
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          tag_commit="$(git rev-parse "refs/tags/$GITHUB_REF_NAME^{commit}")"
+          main_commit="$(git rev-parse refs/remotes/origin/main^{commit})"
+          [[ "$tag_commit" == "$main_commit" && "$tag_commit" == "$GITHUB_SHA" ]] || {
+            echo 'Release tag must point to the current main commit' >&2; exit 1;
+          }
+          git diff --exit-code
+          git diff --cached --exit-code
+          VERSION="${GITHUB_REF_NAME#v}" node <<'NODE'
+          const fs = require('node:fs');
+          const p = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          if (p.name !== '@peanut/cli' || p.version !== process.env.VERSION || p.private
+            || p.repository?.type !== 'git'
+            || p.repository?.url !== 'https://github.com/peanut-business/peanut-cli.git'
+            || p.publishConfig?.access !== 'public'
+            || JSON.stringify(p.bin) !== JSON.stringify({peanut: 'bin/peanut.js'})
+            || JSON.stringify(p.files) !== JSON.stringify(['bin', 'lib', 'recipes', 'README.md'])
+            || Object.keys(p.dependencies ?? {}).length || p.gitHead !== undefined) {
+            throw new Error('Tagged package identity, public contents or source contract differs');
+          }
+          NODE
+      - name: Use the pinned npm pack tool
+        run: npm install --global npm@11.15.0
+      - name: Check CLI syntax
+        run: npm run check
+      - name: Pack and verify the fixed source artifact
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          stage="$RUNNER_TEMP/cli-source"
+          mkdir -p "$stage"
+          git archive "$GITHUB_SHA" | tar -x -C "$stage"
+          STAGE="$stage" node <<'NODE'
+          const fs = require('node:fs');
+          const path = `${process.env.STAGE}/package.json`;
+          const p = JSON.parse(fs.readFileSync(path, 'utf8'));
+          p.gitHead = process.env.GITHUB_SHA;
+          fs.writeFileSync(path, JSON.stringify(p, null, 2) + '\n');
+          NODE
+          npm pack "$stage" --json --pack-destination "$RUNNER_TEMP" > "$RUNNER_TEMP/cli-pack.json"
+          SOURCE_TREE="$(git rev-parse "$GITHUB_SHA^{tree}")" python3 <<'PY'
+          import base64, hashlib, json, os, pathlib, stat, subprocess, tarfile
+          root = pathlib.Path.cwd()
+          output = pathlib.Path(os.environ['RUNNER_TEMP'])
+          packs = json.loads((output / 'cli-pack.json').read_text())
+          assert len(packs) == 1
+          pack = packs[0]
+          version = os.environ['GITHUB_REF_NAME'][1:]
+          filename = f'peanut-cli-{version}.tgz'
+          assert pack['name'] == '@peanut/cli' and pack['version'] == version and pack['filename'] == filename
+          tarpath = output / filename
+          raw = tarpath.read_bytes()
+          integrity = 'sha512-' + base64.b64encode(hashlib.sha512(raw).digest()).decode()
+          assert pack['integrity'] == integrity
+          tracked = subprocess.check_output(['git', 'ls-files', '-z']).decode().split('\0')
+          expected = {p for p in tracked if p in ('package.json', 'README.md') or p.startswith(('bin/', 'lib/', 'recipes/'))}
+          source_package = json.loads((root / 'package.json').read_text())
+          records = {}
+          with tarfile.open(tarpath, 'r:gz') as archive:
+              for entry in archive.getmembers():
+                  assert entry.isfile() and entry.name.startswith('package/'), 'Only package regular files are allowed'
+                  path = entry.name[len('package/'):]
+                  assert path in expected and path not in records, 'Unexpected or duplicate package file'
+                  content = archive.extractfile(entry).read()
+                  source = root / path
+                  assert source.is_file() and not source.is_symlink()
+                  mode = stat.S_IMODE(source.stat().st_mode)
+                  assert entry.mode == mode, f'Package source mode differs: {path}'
+                  if path == 'package.json':
+                      derived = json.loads(content)
+                      assert derived.pop('gitHead') == os.environ['GITHUB_SHA']
+                      assert derived == source_package, 'Only gitHead may be derived in package.json'
+                  else:
+                      assert content == source.read_bytes(), f'Package source bytes differ: {path}'
+                  records[path] = {'sha256': hashlib.sha256(content).hexdigest(), 'mode': entry.mode}
+          assert set(records) == expected, 'Package omitted a declared source file'
+          assert records['bin/peanut.js']['mode'] == 0o755
+          receipt = {'schema_version': 1, 'package': '@peanut/cli', 'version': version,
+              'repository': 'https://github.com/peanut-business/peanut-cli.git',
+              'tag': os.environ['GITHUB_REF_NAME'], 'source_commit': os.environ['GITHUB_SHA'],
+              'source_tree': os.environ['SOURCE_TREE'], 'filename': filename, 'integrity': integrity,
+              'sha256': hashlib.sha256(raw).hexdigest(), 'files': dict(sorted(records.items()))}
+          (output / 'cli-release-source.json').write_text(json.dumps(receipt, sort_keys=True, indent=2) + '\n')
+          with open(os.environ['GITHUB_ENV'], 'a') as env:
+              env.write(f'CLI_TARBALL={filename}\nCLI_INTEGRITY={integrity}\n')
+          print(f'Verified {len(records)} fixed-source files, bin mode 0755, {integrity}')
+          PY
+      - name: Publish and verify the immutable GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -Eeuo pipefail
+          flags=()
+          prerelease=false
+          if [[ "$GITHUB_REF_NAME" == *-rc.* ]]; then flags+=(--prerelease); prerelease=true; fi
+          if gh release view "$GITHUB_REF_NAME" --json tagName,isDraft,isPrerelease,assets > "$RUNNER_TEMP/github-release.json" 2>/dev/null; then
+            jq -e --arg tag "$GITHUB_REF_NAME" --arg tarball "$CLI_TARBALL" --argjson prerelease "$prerelease" \
+              '.tagName == $tag and .isDraft == false and .isPrerelease == $prerelease and ([.assets[].name] | sort) == ([$tarball, "cli-release-source.json"] | sort)' \
+              "$RUNNER_TEMP/github-release.json" >/dev/null
+            mkdir "$RUNNER_TEMP/existing-release"
+            gh release download "$GITHUB_REF_NAME" --pattern "$CLI_TARBALL" --pattern cli-release-source.json --dir "$RUNNER_TEMP/existing-release"
+            cmp "$RUNNER_TEMP/$CLI_TARBALL" "$RUNNER_TEMP/existing-release/$CLI_TARBALL"
+            cmp "$RUNNER_TEMP/cli-release-source.json" "$RUNNER_TEMP/existing-release/cli-release-source.json"
+            echo 'Existing GitHub Release assets exactly match this fixed source' | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          gh release create "$GITHUB_REF_NAME" --verify-tag "${flags[@]}" \
+            "$RUNNER_TEMP/$CLI_TARBALL" "$RUNNER_TEMP/cli-release-source.json" \
+            --title "Peanut CLI $GITHUB_REF_NAME" --generate-notes
+          mkdir "$RUNNER_TEMP/published-release"
+          gh release download "$GITHUB_REF_NAME" --pattern "$CLI_TARBALL" --pattern cli-release-source.json --dir "$RUNNER_TEMP/published-release"
+          cmp "$RUNNER_TEMP/$CLI_TARBALL" "$RUNNER_TEMP/published-release/$CLI_TARBALL"
+          cmp "$RUNNER_TEMP/cli-release-source.json" "$RUNNER_TEMP/published-release/cli-release-source.json"
+          echo "GitHub Release assets verified: $CLI_INTEGRITY" | tee -a "$GITHUB_STEP_SUMMARY"
