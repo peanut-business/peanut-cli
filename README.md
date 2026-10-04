@@ -62,6 +62,16 @@ node bin/peanut.js --version
 
 A checkout can be installed locally for CLI testing with `npm install -g .`. The team development policy is to use the newest approved CLI build from `dev`; public npm publication and GitHub Release are separate release gates, and this repository does not claim `@peanut/cli` is already published.
 
+## Public release contract
+
+`.github/workflows/release.yml` publishes only an annotated `vX.Y.Z` or `vX.Y.Z-rc.N` tag at the current `origin/main` commit in `peanut-business/peanut-cli`. The tag version must equal `@peanut/cli`'s package version and its repository/public package identity. The GitHub-hosted job uses Node `22.23.2`, npm `11.15.0` and `npm run check`.
+
+The job packs a temporary archive of that fixed source, adding only the actual source commit as `package.json.gitHead`. It verifies every declared package file against the source bytes and modes, including `bin/peanut.js` mode `0755`, and records the archive SHA-256, SHA-512 integrity and per-file SHA-256 in `cli-release-source.json`. `gitHead` records source identity; it is not a signature or verification of npm provenance.
+
+Publishing uses npm OIDC with `id-token: write`, without npm token configuration. The trusted publisher must separately authorize `@peanut/cli` for repository `peanut-business/peanut-cli`, workflow filename `release.yml`, direct publish permission and no GitHub Environment. [npm trusted publishing](https://docs.npmjs.com/trusted-publishers/) and [npm trust](https://docs.npmjs.com/cli/v11/commands/npm-trust/) describe the account and package prerequisites. A missing package requires a separately authorized bootstrap before trust binding; committing this workflow does not establish the namespace, package or trust relationship.
+
+Stable tags publish to `latest`; release candidates publish to `rc`. An existing version is accepted only when the exact registry package/version/repository/`gitHead`/`dist.integrity` match and its downloaded tarball equals this run's pack. A different or unverifiable version stops the workflow. Only after registry verification does it create a GitHub Release with the exact tarball and source receipt; an existing GitHub Release must have matching metadata and identical assets. Published versions and assets remain immutable. An npm publication followed by a verification or GitHub failure is partial success and must be inspected before retrying.
+
 ## Branches
 
 - `dev`: development and integration
