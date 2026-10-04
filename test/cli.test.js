@@ -92,7 +92,7 @@ function* walk(root, prefix = '') {
 test('version and help work without an application checkout', () => {
     let result = spawnSync(process.execPath, [BIN, '--version'], { encoding: 'utf8' });
     assert.equal(result.status, 0);
-    assert.equal(result.stdout.trim(), 'Peanut CLI 0.2.0');
+    assert.equal(result.stdout.trim(), 'Peanut CLI 0.3.0');
     result = spawnSync(process.execPath, [BIN, '--help'], { encoding: 'utf8' });
     assert.equal(result.status, 0);
     assert.match(result.stdout, /recipe add github-ci/);

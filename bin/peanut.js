@@ -10,8 +10,8 @@ import { RecipeManager } from '../lib/recipe-manager.js';
 import { createProject } from '../lib/create-project.js';
 import { upgradeProject } from '../lib/upgrade-project.js';
 
-const CLI_VERSION = '0.2.0';
 const toolRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const CLI_VERSION = readJsonObject(path.join(toolRoot, 'package.json')).version;
 
 function usage() {
     process.stdout.write(
