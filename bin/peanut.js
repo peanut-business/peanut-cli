@@ -7,17 +7,19 @@ import {
     projectRoot, readJsonObject, validateReleaseVersions,
 } from '../lib/protocol.js';
 import { RecipeManager } from '../lib/recipe-manager.js';
+import { createProject } from '../lib/create-project.js';
 
-const CLI_VERSION = '0.1.0';
+const CLI_VERSION = '0.2.0';
 const toolRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 function usage() {
     process.stdout.write(
         `Peanut CLI ${CLI_VERSION}\n`
-        + 'Usage: peanut doctor|status [--path <application>]\n'
+        + 'Usage: peanut create <target> --name <name> --slug <slug> --package <vendor/name> --edition standalone|multi-tenant [--profile <profile>] [--application-version <semver>] [--source <git-url-or-path>] [--ref <git-ref>]\n'
+        + '       peanut doctor|status [--path <application>]\n'
         + '       peanut recipe list|status [<id>] [--path <application>]\n'
         + '       peanut recipe add github-ci [--path <application>]\n'
-        + 'Local files only. Recipe upgrades and create are not implemented in this MVP.\n',
+        + 'Create defaults to the public Peanut Admin repository at the latest dev ref; pin --ref for reproducible creation.\n',
     );
 }
 
@@ -52,7 +54,33 @@ function regularFile(file) {
     }
 }
 
+function parseCreateArguments(raw) {
+    const target = raw[0] ?? '';
+    if (target === '' || target.startsWith('-')) throw new Error('PEANUT_CREATE_TARGET_REQUIRED');
+    const values = {};
+    const map = new Map([
+        ['--name', 'name'], ['--slug', 'slug'], ['--package', 'package'], ['--edition', 'edition'],
+        ['--profile', 'profile'], ['--application-version', 'applicationVersion'],
+        ['--source', 'source'], ['--ref', 'ref'],
+    ]);
+    for (let index = 1; index < raw.length; index += 1) {
+        const argument = raw[index];
+        const equals = argument.indexOf('=');
+        const flag = equals === -1 ? argument : argument.slice(0, equals);
+        const key = map.get(flag);
+        if (!key || Object.prototype.hasOwnProperty.call(values, key)) throw new Error('PEANUT_CREATE_ARGUMENTS_INVALID');
+        const value = equals === -1 ? (raw[++index] ?? '') : argument.slice(equals + 1);
+        if (value === '') throw new Error('PEANUT_CREATE_ARGUMENTS_INVALID');
+        values[key] = value;
+    }
+    return { target, ...values };
+}
+
 function main() {
+    if (process.argv[2] === 'create') {
+        output(createProject(parseCreateArguments(process.argv.slice(3))));
+        return 0;
+    }
     const parsed = parseArguments(process.argv.slice(2));
     if (parsed.special === 'help') { usage(); return 0; }
     if (parsed.special === 'version') {
