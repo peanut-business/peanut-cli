@@ -6,7 +6,7 @@ Peanut CLI is the source of truth for the global `peanut` command. It is indepen
 
 ## Current development line
 
-CLI `0.2.0` implements the extracted MVP, project creation and native development APP upstream upgrades:
+CLI `0.3.0` implements project creation and native development APP upstream upgrades:
 
 ```sh
 peanut --version
