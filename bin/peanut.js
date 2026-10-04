@@ -8,6 +8,7 @@ import {
 } from '../lib/protocol.js';
 import { RecipeManager } from '../lib/recipe-manager.js';
 import { createProject } from '../lib/create-project.js';
+import { upgradeProject } from '../lib/upgrade-project.js';
 
 const CLI_VERSION = '0.2.0';
 const toolRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -17,6 +18,9 @@ function usage() {
         `Peanut CLI ${CLI_VERSION}\n`
         + 'Usage: peanut create <target> --name <name> --slug <slug> --package <vendor/name> --edition standalone|multi-tenant [--profile <profile>] [--application-version <semver>] [--source <git-url-or-path>] [--ref <git-ref>]\n'
         + '       peanut doctor|status [--path <application>]\n'
+        + '       peanut upgrade [--check|--plan] [--ref <version-or-tag>] [--channel stable|prerelease] [--path <application>]\n'
+        + '       peanut upgrade --apply-plan <plan> [--confirm-plan-sha256 <digest> --preserve-paths <paths|-> --replace-paths <paths|->] [--path <application>]\n'
+        + '       peanut upgrade --recover-plan <plan> [--path <application>]\n'
         + '       peanut recipe list|status [<id>] [--path <application>]\n'
         + '       peanut recipe add github-ci [--path <application>]\n'
         + 'Create defaults to the public Peanut Admin repository at the latest dev ref; pin --ref for reproducible creation.\n',
@@ -76,10 +80,46 @@ function parseCreateArguments(raw) {
     return { target, ...values };
 }
 
-function main() {
+function parseUpgradeArguments(raw) {
+    const values = {};
+    const map = new Map([
+        ['--path', 'path'], ['--ref', 'ref'], ['--channel', 'channel'], ['--apply-plan', 'applyPlan'],
+        ['--recover-plan', 'recoverPlan'], ['--confirm-plan-sha256', 'confirmPlanSha256'],
+        ['--preserve-paths', 'preservePaths'], ['--replace-paths', 'replacePaths'],
+        ['--check', 'check'], ['--plan', 'plan'],
+    ]);
+    for (let index = 0; index < raw.length; index += 1) {
+        const argument = raw[index];
+        const equals = argument.indexOf('=');
+        const flag = equals === -1 ? argument : argument.slice(0, equals);
+        const key = map.get(flag);
+        if (!key || Object.hasOwn(values, key)) throw new Error('PEANUT_UPGRADE_ARGUMENTS_INVALID');
+        if (key === 'check' || key === 'plan') {
+            if (equals !== -1) throw new Error('PEANUT_UPGRADE_ARGUMENTS_INVALID');
+            values[key] = true;
+        } else {
+            const value = equals === -1 ? (raw[++index] ?? '') : argument.slice(equals + 1);
+            if (!value || value.startsWith('--')) throw new Error('PEANUT_UPGRADE_ARGUMENTS_INVALID');
+            values[key] = value;
+        }
+    }
+    if ([values.check, values.plan, values.applyPlan, values.recoverPlan].filter(Boolean).length > 1
+        || ((values.applyPlan || values.recoverPlan) && (values.ref || values.channel))
+        || ((values.confirmPlanSha256 || values.preservePaths || values.replacePaths) && !values.applyPlan)) {
+        throw new Error('PEANUT_UPGRADE_ARGUMENTS_INVALID');
+    }
+    return values;
+}
+
+async function main() {
     if (process.argv[2] === 'create') {
         output(createProject(parseCreateArguments(process.argv.slice(3))));
         return 0;
+    }
+    if (process.argv[2] === 'upgrade') {
+        const result = await upgradeProject(parseUpgradeArguments(process.argv.slice(3)));
+        output(result);
+        return result.status === 'blocked' ? 1 : 0;
     }
     const parsed = parseArguments(process.argv.slice(2));
     if (parsed.special === 'help') { usage(); return 0; }
@@ -171,7 +211,7 @@ function main() {
 }
 
 try {
-    process.exitCode = main();
+    process.exitCode = await main();
 } catch (error) {
     process.stderr.write(`peanut: ${error.message}\n`);
     process.exitCode = 2;
