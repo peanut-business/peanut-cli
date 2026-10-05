@@ -10,7 +10,7 @@ CLI `0.3.0` implements project creation and native development APP upstream upgr
 
 ```sh
 peanut --version
-peanut create <target> --name <name> --slug <slug> --package <vendor/name> --edition standalone|multi-tenant
+peanut create <target> --name <name> --slug <slug> --package <vendor/name> [--edition standalone|multi-tenant]
 peanut doctor [--path <application>]
 peanut status [--path <application>]
 peanut upgrade --check [--path <application>]
@@ -23,6 +23,12 @@ peanut recipe add github-ci [--path <application>]
 
 `github-ci@1.0.0` remains the active default Recipe.
 `peanut create` defaults to the public `peanut-business/peanut-admin-code` repository at the latest `dev` ref for normal team development. Use `--ref <tag-or-commit>` when a project must be reproduced from an exact source revision; `--source <git-url-or-path>` selects an explicitly compatible source.
+
+When a developer runs `peanut create` in an interactive terminal without `--edition`, the CLI requires an explicit choice between `multi-tenant` and `standalone`. Machine/CI usage remains fail-closed and must pass `--edition`. There is no implicit Edition default.
+
+The two Editions are separate deliverables and deployments. `standalone` produces the single-tenant projection and omits the Platform bundle; `multi-tenant` produces the Platform/tenant-management projection. Their runtime directories, configuration and deployment identities must not be mixed, and normal APP/scaffold upgrades remain within the recorded Edition rather than changing Edition as a side effect.
+
+For product validation, shared code and the common lifecycle do not need two identical full test runs. A complete lifecycle can be proven with one Edition; the current permanent `peanut-app` may remain the Standalone lifecycle instance. Multi-tenant should be the primary broad functional/regression target because it includes the additional Platform, tenant-management, Host and tenant-switching surfaces. The other Edition still requires its Edition projection checks and critical create/install/start/login/deploy/upgrade smoke path. Edition-specific behavior must be tested in the Edition that owns it.
 
 Creation is fail-closed: it stages the application first, verifies the native `create-app` result, and only then moves the application into the requested target. The result records the selected repository, ref, commit, and tree. A failed creation does not leave the requested target behind.
 

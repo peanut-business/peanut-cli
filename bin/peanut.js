@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
 import path from 'node:path';
+import { createInterface } from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
 import {
     commandExists, existingFileWithin, phpEnvironmentChecks, projectPath,
@@ -16,13 +17,15 @@ const CLI_VERSION = readJsonObject(path.join(toolRoot, 'package.json')).version;
 function usage() {
     process.stdout.write(
         `Peanut CLI ${CLI_VERSION}\n`
-        + 'Usage: peanut create <target> --name <name> --slug <slug> --package <vendor/name> --edition standalone|multi-tenant [--profile <profile>] [--application-version <semver>] [--source <git-url-or-path>] [--ref <git-ref>]\n'
+        + 'Usage: peanut create <target> --name <name> --slug <slug> --package <vendor/name> [--edition standalone|multi-tenant] [--profile <profile>] [--application-version <semver>] [--source <git-url-or-path>] [--ref <git-ref>]\n'
         + '       peanut doctor|status [--path <application>]\n'
         + '       peanut upgrade [--check|--plan] [--ref <version-or-tag>] [--channel stable|prerelease] [--path <application>]\n'
         + '       peanut upgrade --apply-plan <plan> [--confirm-plan-sha256 <digest> --preserve-paths <paths|-> --replace-paths <paths|->] [--path <application>]\n'
         + '       peanut upgrade --recover-plan <plan> [--path <application>]\n'
         + '       peanut recipe list|status [<id>] [--path <application>]\n'
         + '       peanut recipe add github-ci [--path <application>]\n'
+        + 'Interactive create prompts for an Edition when --edition is omitted; non-interactive create requires --edition.\n'
+        + 'Standalone and multi-tenant are separate application artifacts and deployments; normal upgrades remain within the same Edition.\n'
         + 'Create defaults to the public Peanut Admin repository at the latest dev ref; pin --ref for reproducible creation.\n',
     );
 }
@@ -80,6 +83,33 @@ function parseCreateArguments(raw) {
     return { target, ...values };
 }
 
+async function chooseCreateEdition(options) {
+    if (options.edition) return options;
+    if (!process.stdin.isTTY || !process.stderr.isTTY) {
+        throw new Error('PEANUT_CREATE_EDITION_REQUIRED');
+    }
+
+    process.stderr.write(
+        'Choose application Edition:\n'
+        + '  1) multi-tenant  Multi-tenant deployment with Platform and tenant management\n'
+        + '  2) standalone    Single-tenant independent deployment\n'
+        + 'The two Editions are generated, deployed, and upgraded separately.\n',
+    );
+    const prompt = createInterface({ input: process.stdin, output: process.stderr });
+    try {
+        const answer = (await prompt.question('Edition [1/2]: ')).trim().toLowerCase();
+        const edition = answer === '1' || answer === 'multi-tenant'
+            ? 'multi-tenant'
+            : answer === '2' || answer === 'standalone'
+                ? 'standalone'
+                : null;
+        if (edition === null) throw new Error('PEANUT_CREATE_EDITION_INVALID');
+        return { ...options, edition };
+    } finally {
+        prompt.close();
+    }
+}
+
 function parseUpgradeArguments(raw) {
     const values = {};
     const map = new Map([
@@ -113,7 +143,8 @@ function parseUpgradeArguments(raw) {
 
 async function main() {
     if (process.argv[2] === 'create') {
-        output(createProject(parseCreateArguments(process.argv.slice(3))));
+        const createOptions = await chooseCreateEdition(parseCreateArguments(process.argv.slice(3)));
+        output(createProject(createOptions));
         return 0;
     }
     if (process.argv[2] === 'upgrade') {

@@ -223,7 +223,7 @@ test('corrupt bundle is rejected before application writes', (t) => {
     assert.equal(fs.existsSync(workflow(app)), false);
 });
 
-test('create stages a project from an explicit git source and records source identity', (t) => {
+test('create stages both Editions from an explicit git source and records source identity', (t) => {
     const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'peanut-cli-create-'));
     t.after(() => fs.rmSync(temp, { recursive: true, force: true }));
     const source = path.join(temp, 'source');
@@ -256,17 +256,31 @@ echo json_encode([
     spawnSync('git', ['add', '.'], { cwd: source });
     spawnSync('git', ['commit', '-m', 'fixture'], { cwd: source, encoding: 'utf8' });
 
-    const target = path.join(temp, 'created-app');
+    for (const edition of ['standalone', 'multi-tenant']) {
+        const target = path.join(temp, `created-app-${edition}`);
+        const result = spawnSync(process.execPath, [
+            BIN, 'create', target,
+            '--name', 'Created App', '--slug', 'created-app', '--package', 'example/created-app',
+            '--edition', edition, '--source', source, '--ref', 'dev',
+        ], { encoding: 'utf8' });
+        assert.equal(result.status, 0, result.stderr + result.stdout);
+        const output = JSON.parse(result.stdout);
+        assert.equal(output.status, 'created');
+        assert.equal(output.edition, edition);
+        assert.equal(output.source.ref, 'dev');
+        assert.match(output.source.commit, /^[0-9a-f]{40}$/);
+        assert.equal(fs.existsSync(path.join(target, '.peanut/application-manifest.json')), true);
+        assert.equal([...fs.readdirSync(temp)].some((name) => name.startsWith(`.created-app-${edition}.peanut-create-`)), false);
+    }
+});
+
+test('non-interactive create requires an explicit Edition', (t) => {
+    const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'peanut-cli-create-edition-'));
+    t.after(() => fs.rmSync(temp, { recursive: true, force: true }));
     const result = spawnSync(process.execPath, [
-        BIN, 'create', target,
+        BIN, 'create', path.join(temp, 'created-app'),
         '--name', 'Created App', '--slug', 'created-app', '--package', 'example/created-app',
-        '--edition', 'standalone', '--source', source, '--ref', 'dev',
     ], { encoding: 'utf8' });
-    assert.equal(result.status, 0, result.stderr + result.stdout);
-    const output = JSON.parse(result.stdout);
-    assert.equal(output.status, 'created');
-    assert.equal(output.source.ref, 'dev');
-    assert.match(output.source.commit, /^[0-9a-f]{40}$/);
-    assert.equal(fs.existsSync(path.join(target, '.peanut/application-manifest.json')), true);
-    assert.equal([...fs.readdirSync(temp)].some((name) => name.startsWith('.created-app.peanut-create-')), false);
+    assert.equal(result.status, 2);
+    assert.match(result.stderr, /PEANUT_CREATE_EDITION_REQUIRED/);
 });
