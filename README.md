@@ -6,7 +6,7 @@ Peanut CLI is the source of truth for the global `peanut` command. It is indepen
 
 ## Current development line
 
-CLI `0.3.1` implements project creation and native development APP upstream upgrades:
+CLI `0.3.2` implements project creation and native development APP upstream upgrades:
 
 ```sh
 peanut --version
@@ -50,7 +50,7 @@ peanut upgrade --apply-plan .peanut/upgrades/plans/<candidate>.json \
   --preserve-paths path/to/customized-file --replace-paths -
 ```
 
-Use `-` for an empty decision list. Missing, overlapping or stale decisions are rejected by the native engine. To apply a reviewed ready plan, use `peanut upgrade --apply-plan <plan>`. After a failed apply, review the native journal before `peanut upgrade --recover-plan <plan>`; CLI retains package/plan/recovery state and does not automatically discard or replay it. Blocked conflicts and same-version source mismatch exit 1; invalid inputs/download/native failures exit 2. Successful check/plan/apply/recovery exits 0.
+Use `-` for an empty decision list. Missing, overlapping or stale decisions are rejected by the native engine. To apply a reviewed ready plan, use `peanut upgrade --apply-plan <plan>`. After a failed apply, review the native journal before `peanut upgrade --recover-plan <plan>`; CLI retains package/plan/recovery state and does not automatically discard or replay it. Native JSON responses must have empty stderr and exit 0; only a blocked native preflight uses exit 2. A native error cannot be accepted as a successful plan, apply or recovery. Blocked conflicts and same-version source mismatch exit 1; invalid inputs/download/native failures exit 2. Successful check/plan/apply/recovery exits 0.
 
 This is a development source operation. It prepares only the selected engine's locked dependencies; it does not start servers, install APP dependencies, run builds, execute database migrations, switch production containers or deploy. Follow the APP's normal local dependency, migration and startup workflow after absorbing upstream changes. Production lifecycle follows the distribution's deployment contract: full-source instances use the distinct installed `scripts/upgrade` coordinator; server-only distributions use their `update.sh` deployment workflow.
 
