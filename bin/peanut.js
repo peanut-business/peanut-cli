@@ -28,7 +28,8 @@ function usage() {
         + 'Standalone and multi-tenant are separate application artifacts and deployments; normal upgrades remain within the same Edition.\n'
         + 'Create defaults to the public Peanut Admin repository at the latest dev ref; pin --ref for reproducible creation.\n'
         + 'Upgrade discovery stays within the current major version; only explicit --ref can select a published cross-major release.\n'
-        + 'Cross-major apply requires --confirm-major-upgrade. AI/Agent operators must explain source to target, risks and plan to a human before passing this flag; prior explicit authorization for this upgrade or a defined cross-major scope is sufficient.\n',
+        + 'Risk feature: cross-major upgrades may break custom business code, dependencies, APIs or migrations. Review the plan, keep a recoverable backup and resolve known risks before attempting apply.\n'
+        + 'Cross-major apply requires --confirm-major-upgrade. AI/Agent operators must explain source to target, risks and plan and obtain human authorization before passing this flag; prior explicit authorization for this upgrade or a defined cross-major scope is sufficient, but generic development authorization is not.\n',
     );
 }
 
