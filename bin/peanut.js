@@ -19,14 +19,16 @@ function usage() {
         `Peanut CLI ${CLI_VERSION}\n`
         + 'Usage: peanut create <target> --name <name> --slug <slug> --package <vendor/name> [--edition standalone|multi-tenant] [--profile <profile>] [--application-version <semver>] [--source <git-url-or-path>] [--ref <git-ref>]\n'
         + '       peanut doctor|status [--path <application>]\n'
-        + '       peanut upgrade [--check|--plan] [--ref <version-or-tag>] [--channel stable|prerelease] [--path <application>]\n'
-        + '       peanut upgrade --apply-plan <plan> [--confirm-plan-sha256 <digest> --preserve-paths <paths|-> --replace-paths <paths|->] [--path <application>]\n'
+        + '       peanut upgrade [--check|--plan] [--ref <version-or-tag>] [--channel stable|prerelease] [--confirm-major-upgrade] [--path <application>]\n'
+        + '       peanut upgrade --apply-plan <plan> [--confirm-plan-sha256 <digest> --preserve-paths <paths|-> --replace-paths <paths|->] [--confirm-major-upgrade] [--path <application>]\n'
         + '       peanut upgrade --recover-plan <plan> [--path <application>]\n'
         + '       peanut recipe list|status [<id>] [--path <application>]\n'
         + '       peanut recipe add github-ci [--path <application>]\n'
         + 'Interactive create prompts for an Edition when --edition is omitted; non-interactive create requires --edition.\n'
         + 'Standalone and multi-tenant are separate application artifacts and deployments; normal upgrades remain within the same Edition.\n'
-        + 'Create defaults to the public Peanut Admin repository at the latest dev ref; pin --ref for reproducible creation.\n',
+        + 'Create defaults to the public Peanut Admin repository at the latest dev ref; pin --ref for reproducible creation.\n'
+        + 'Upgrade discovery stays within the current major version; only explicit --ref can select a published cross-major release.\n'
+        + 'Cross-major apply requires --confirm-major-upgrade. AI/Agent operators must explain source to target, risks and plan to a human before passing this flag; prior explicit authorization for this upgrade or a defined cross-major scope is sufficient.\n',
     );
 }
 
@@ -116,7 +118,7 @@ function parseUpgradeArguments(raw) {
         ['--path', 'path'], ['--ref', 'ref'], ['--channel', 'channel'], ['--apply-plan', 'applyPlan'],
         ['--recover-plan', 'recoverPlan'], ['--confirm-plan-sha256', 'confirmPlanSha256'],
         ['--preserve-paths', 'preservePaths'], ['--replace-paths', 'replacePaths'],
-        ['--check', 'check'], ['--plan', 'plan'],
+        ['--check', 'check'], ['--plan', 'plan'], ['--confirm-major-upgrade', 'confirmMajorUpgrade'],
     ]);
     for (let index = 0; index < raw.length; index += 1) {
         const argument = raw[index];
@@ -124,7 +126,7 @@ function parseUpgradeArguments(raw) {
         const flag = equals === -1 ? argument : argument.slice(0, equals);
         const key = map.get(flag);
         if (!key || Object.hasOwn(values, key)) throw new Error('PEANUT_UPGRADE_ARGUMENTS_INVALID');
-        if (key === 'check' || key === 'plan') {
+        if (key === 'check' || key === 'plan' || key === 'confirmMajorUpgrade') {
             if (equals !== -1) throw new Error('PEANUT_UPGRADE_ARGUMENTS_INVALID');
             values[key] = true;
         } else {
@@ -150,7 +152,7 @@ async function main() {
     if (process.argv[2] === 'upgrade') {
         const result = await upgradeProject(parseUpgradeArguments(process.argv.slice(3)));
         output(result);
-        return ['blocked', 'source_identity_mismatch'].includes(result.status) ? 1 : 0;
+        return ['blocked', 'source_identity_mismatch', 'confirmation_required'].includes(result.status) ? 1 : 0;
     }
     const parsed = parseArguments(process.argv.slice(2));
     if (parsed.special === 'help') { usage(); return 0; }
