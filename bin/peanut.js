@@ -17,7 +17,7 @@ const CLI_VERSION = readJsonObject(path.join(toolRoot, 'package.json')).version;
 function usage() {
     process.stdout.write(
         `Peanut CLI ${CLI_VERSION}\n`
-        + 'Usage: peanut create <target> --name <name> --slug <slug> --package <vendor/name> [--edition standalone|multi-tenant] [--profile <profile>] [--application-version <semver>] [--source <git-url-or-path>] [--ref <git-ref>]\n'
+        + 'Usage: peanut create <target> --name <name> --slug <slug> --package <vendor/name> [--edition standalone|multi-tenant] [--profile <profile>] [--application-version <semver>] [--source <git-url-or-path>] [--ref <git-ref>] [--channel development|stable|prerelease]\n'
         + '       peanut doctor|status [--path <application>]\n'
         + '       peanut upgrade [--check|--plan] [--ref <version-or-tag>] [--channel stable|prerelease] [--confirm-major-upgrade] [--path <application>]\n'
         + '       peanut upgrade --apply-plan <plan> [--confirm-plan-sha256 <digest> --preserve-paths <paths|-> --replace-paths <paths|->] [--confirm-major-upgrade] [--path <application>]\n'
@@ -27,7 +27,7 @@ function usage() {
         + 'Interactive create prompts for an Edition when --edition is omitted; non-interactive create requires --edition.\n'
         + 'Standalone and multi-tenant are separate application artifacts and deployments; normal upgrades remain within the same Edition.\n'
         + 'Create defaults to the public Peanut Admin repository at the latest dev ref; pin --ref for reproducible creation.\n'
-        + 'Upgrade discovery stays within the current major version; only explicit --ref can select a published cross-major release.\n'
+        + 'Fixed-release APP discovery stays within the current major; development APP checks the latest published release. Applying a development source transition requires explicit --ref.\n'
         + 'Risk feature: cross-major upgrades may break custom business code, dependencies, APIs or migrations. Review the plan, keep a recoverable backup and resolve known risks before attempting apply.\n'
         + 'Cross-major apply requires --confirm-major-upgrade. AI/Agent operators must explain source to target, risks and plan and obtain human authorization before passing this flag; prior explicit authorization for this upgrade or a defined cross-major scope is sufficient, but generic development authorization is not.\n',
     );
@@ -71,7 +71,7 @@ function parseCreateArguments(raw) {
     const map = new Map([
         ['--name', 'name'], ['--slug', 'slug'], ['--package', 'package'], ['--edition', 'edition'],
         ['--profile', 'profile'], ['--application-version', 'applicationVersion'],
-        ['--source', 'source'], ['--ref', 'ref'],
+        ['--source', 'source'], ['--ref', 'ref'], ['--channel', 'channel'],
     ]);
     for (let index = 1; index < raw.length; index += 1) {
         const argument = raw[index];
@@ -147,13 +147,13 @@ function parseUpgradeArguments(raw) {
 async function main() {
     if (process.argv[2] === 'create') {
         const createOptions = await chooseCreateEdition(parseCreateArguments(process.argv.slice(3)));
-        output(createProject(createOptions));
+        output(await createProject(createOptions));
         return 0;
     }
     if (process.argv[2] === 'upgrade') {
         const result = await upgradeProject(parseUpgradeArguments(process.argv.slice(3)));
         output(result);
-        return ['blocked', 'source_identity_mismatch', 'confirmation_required'].includes(result.status) ? 1 : 0;
+        return ['blocked', 'source_identity_mismatch', 'source_identity_unknown', 'source_range_unsupported', 'source_ahead', 'source_diverged', 'explicit_release_ref_required', 'confirmation_required'].includes(result.status) ? 1 : 0;
     }
     const parsed = parseArguments(process.argv.slice(2));
     if (parsed.special === 'help') { usage(); return 0; }
@@ -207,6 +207,7 @@ async function main() {
             kind: application === null ? 'source_checkout' : 'application',
             application: application?.application ?? null,
             scaffold: application?.template ?? null,
+            generation_source: application?.generation_source ?? null,
             versions,
             recipes: recipeStates,
             upgrade_state_present: fs.existsSync(projectPath(root, '.peanut/upgrades')),
