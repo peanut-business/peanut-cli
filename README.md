@@ -114,3 +114,60 @@ peanut --version
 
 - `dev`: development and integration
 - `main`: release line
+
+## Optional collaboration service
+
+The APP owns its authenticated service configuration and safe drain. The separate
+`peanut-hocuspocus` project owns its pinned service source, Docker configuration
+and start/stop entry; its runtime mounts only its own program read-only. The APP
+provides authentication, loading, saving, file permissions and history through APIs.
+CLI calls only `server/docker/scripts/configure-collaboration.py` in the selected
+APP through Python 3, without a shell or importing APP implementation code:
+
+```sh
+peanut service collaboration plan --path /absolute/app
+peanut service collaboration enable --path /absolute/app --configuration collaboration-configuration.json --expected-revision 0
+peanut service collaboration status --path /absolute/app
+peanut service collaboration status --path /absolute/app --probe
+peanut service collaboration disable --path /absolute/app --drain-id original-stable-id
+```
+
+`--path` is required. The entry must be an ordinary single-link file within the canonical APP.
+Explicit non-secret JSON configuration may be outside the APP; it must also be
+an ordinary single-link file, and path-component symlinks are rejected. CLI passes configuration by path and never reads secret files.
+Plan is read-only and may report missing configuration references. Enable is
+CAS-protected **prepare only**, never deploy/build/pull/start. Use the APP's native
+start entry separately under its operational authorization. Status without
+`--probe` is `not_probed`, not a health claim; probe requests the APP's real signed
+readiness. Disable must reuse the original stable drain ID on an unknown outcome;
+CLI never manufactures IDs, automatically retries, force-stops or deletes volumes.
+`--preserve-desired` remains internal to the APP's stop/upgrade lifecycle.
+
+Native collaboration uses Hocuspocus 4.6.0 / Yjs 13.6.32 and room protocol 2.
+The public lifecycle envelope remains v1. A ready probe requires both
+`signed_runtime=ok` and `paired_native_runtime=ok`: the APP owner must verify
+fresh PHP and Node identities, configuration binding and the Node process holder.
+PHP schema readiness or the retired operator-v1 probe cannot establish this result.
+The CLI does not call Node control endpoints, read keys or implement activation.
+The APP's native start/activate owner opens admission only after that paired proof.
+
+A completed disable requires `native_room_drain=ok`, `durable_drain=ok` and
+`native_stop=ok`. Its public `drain` summary contains exactly `protocol: 2`,
+`drain_id`, `plan_sha256`, `targets_sha256`, `durably_drained: true` and nonnegative
+integer `room_count`; the ID must match the requested original ID. Per-room
+holder/epoch/capture proofs stay with the APP owner, without document payloads in
+the CLI result. A zero-room summary still requires a verified empty target set
+and native stop. The APP must bind UUID holder values in protocol-2 control
+headers, bodies and signature canonicalization. `CONTROL_HOLDER_CHANGED` is an
+unconfirmed original operation, never an offline drain or permission to create
+a replacement ID. The retired accepted/journal path is not a completion proof.
+
+Results use only `peanut.collaboration.lifecycle.v1`, with full field/type/action
+and exit consistency checks. Exit 0 confirms the reported operation (not deployment
+or health without probe); 2 is input/CAS/safety rejection, 3 is missing configuration
+reference, and 4 is unknown/unconfirmed. A native rc0 unknown or failed readiness query
+retains its valid protocol response but is surfaced as CLI rc4: the query returned,
+readiness remains unconfirmed. Malformed/non-JSON, stderr diagnostics, unknown exits and protocol
+mismatches fail closed with a generic error; raw native/configuration diagnostics
+are never echoed. Synthetic orchestration tests do not prove real Docker, Node,
+MySQL, signed readiness or durable drain qualification.

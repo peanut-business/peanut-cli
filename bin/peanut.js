@@ -10,6 +10,7 @@ import {
 import { RecipeManager } from '../lib/recipe-manager.js';
 import { createProject } from '../lib/create-project.js';
 import { upgradeProject } from '../lib/upgrade-project.js';
+import { parseCollaborationArguments, serviceCollaboration } from '../lib/service-collaboration.js';
 
 const toolRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const CLI_VERSION = readJsonObject(path.join(toolRoot, 'package.json')).version;
@@ -22,6 +23,7 @@ function usage() {
         + '       peanut upgrade [--check|--plan] [--ref <version-or-tag>] [--channel stable|prerelease] [--confirm-major-upgrade] [--path <application>]\n'
         + '       peanut upgrade --apply-plan <plan> [--confirm-plan-sha256 <digest> --preserve-paths <paths|-> --replace-paths <paths|->] [--confirm-major-upgrade] [--path <application>]\n'
         + '       peanut upgrade --recover-plan <plan> [--path <application>]\n'
+        + '       peanut service collaboration plan|enable|status|disable --path <application> [--configuration <non-secret-json>] [--expected-revision <n>] [--probe] [--drain-id <original-id>]\n'
         + '       peanut recipe list|status [<id>] [--path <application>]\n'
         + '       peanut recipe add github-ci [--path <application>]\n'
         + 'Interactive create prompts for an Edition when --edition is omitted; non-interactive create requires --edition.\n'
@@ -145,6 +147,12 @@ function parseUpgradeArguments(raw) {
 }
 
 async function main() {
+    if (process.argv[2] === 'service') {
+        if (process.argv[3] !== 'collaboration') throw new Error('PEANUT_SERVICE_UNSUPPORTED');
+        const { result, exitCode } = serviceCollaboration(parseCollaborationArguments(process.argv.slice(4)));
+        output(result);
+        return exitCode;
+    }
     if (process.argv[2] === 'create') {
         const createOptions = await chooseCreateEdition(parseCreateArguments(process.argv.slice(3)));
         output(await createProject(createOptions));
