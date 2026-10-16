@@ -18,7 +18,7 @@ const CLI_VERSION = readJsonObject(path.join(toolRoot, 'package.json')).version;
 function usage() {
     process.stdout.write(
         `Peanut CLI ${CLI_VERSION}\n`
-        + 'Usage: peanut create <target> --name <name> --slug <slug> --package <vendor/name> [--edition standalone|multi-tenant] [--profile <profile>] [--application-version <semver>] [--source <git-url-or-path>] [--ref <git-ref>] [--channel development|stable|prerelease]\n'
+        + 'Usage: peanut create <target> --name <name> --slug <slug> --package <vendor/name> [--edition standalone|multi-tenant] [--profile <profile>] [--workflow none|runtime|full] [--application-version <semver>] [--source <git-url-or-path>] [--ref <git-ref>] [--channel development|stable|prerelease]\n'
         + '       peanut doctor|status [--path <application>]\n'
         + '       peanut upgrade [--check|--plan] [--ref <version-or-tag>] [--channel stable|prerelease] [--confirm-major-upgrade] [--path <application>]\n'
         + '       peanut upgrade --apply-plan <plan> [--confirm-plan-sha256 <digest> --preserve-paths <paths|-> --replace-paths <paths|->] [--confirm-major-upgrade] [--path <application>]\n'
@@ -27,6 +27,7 @@ function usage() {
         + '       peanut recipe list|status [<id>] [--path <application>]\n'
         + '       peanut recipe add github-ci [--path <application>]\n'
         + 'Interactive create prompts for an Edition when --edition is omitted; non-interactive create requires --edition.\n'
+        + '--profile selects the file profile; --workflow independently selects integrations for either Edition (none|runtime|full). Omitted --workflow keeps the native runtime default.\n'
         + 'Standalone and multi-tenant are separate application artifacts and deployments; normal upgrades remain within the same Edition.\n'
         + 'Create defaults to the public Peanut Admin repository at the latest dev ref; pin --ref for reproducible creation.\n'
         + 'Fixed-release APP discovery stays within the current major; development APP checks the latest published release. Applying a development source transition requires explicit --ref.\n'
@@ -72,7 +73,7 @@ function parseCreateArguments(raw) {
     const values = {};
     const map = new Map([
         ['--name', 'name'], ['--slug', 'slug'], ['--package', 'package'], ['--edition', 'edition'],
-        ['--profile', 'profile'], ['--application-version', 'applicationVersion'],
+        ['--profile', 'profile'], ['--workflow', 'workflow'], ['--application-version', 'applicationVersion'],
         ['--source', 'source'], ['--ref', 'ref'], ['--channel', 'channel'],
     ]);
     for (let index = 1; index < raw.length; index += 1) {
@@ -84,6 +85,9 @@ function parseCreateArguments(raw) {
         const value = equals === -1 ? (raw[++index] ?? '') : argument.slice(equals + 1);
         if (value === '') throw new Error('PEANUT_CREATE_ARGUMENTS_INVALID');
         values[key] = value;
+    }
+    if (values.workflow !== undefined && !['none', 'runtime', 'full'].includes(values.workflow)) {
+        throw new Error('PEANUT_CREATE_WORKFLOW_INVALID');
     }
     return { target, ...values };
 }
