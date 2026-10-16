@@ -10,7 +10,7 @@ CLI `0.3.2` implements project creation and native development APP upstream upgr
 
 ```sh
 peanut --version
-peanut create <target> --name <name> --slug <slug> --package <vendor/name> [--edition standalone|multi-tenant] [--channel development|stable|prerelease] [--ref <git-ref-or-published-tag>]
+peanut create <target> --name <name> --slug <slug> --package <vendor/name> [--edition standalone|multi-tenant] [--workflow none|runtime|full] [--channel development|stable|prerelease] [--ref <git-ref-or-published-tag>]
 peanut doctor [--path <application>]
 peanut status [--path <application>]
 peanut upgrade --check [--path <application>]
@@ -27,6 +27,8 @@ peanut recipe add github-ci [--path <application>]
 These source and channel flows require a selected Code source with the native provenance, release-adoption and source-selection interfaces. Historical releases, including Stable 4.0.3, lack these interfaces; updating CLI `dev` does not retrofit them or make these operations executable against those releases.
 
 When a developer runs `peanut create` in an interactive terminal without `--edition`, the CLI requires an explicit choice between `multi-tenant` and `standalone`. Machine/CI usage remains fail-closed and must pass `--edition`. There is no implicit Edition default.
+
+`--profile` selects the file profile (`minimal|standard|full`); `--workflow` independently selects integration (`none|runtime|full`) within either Edition. Omitting `--workflow` keeps the native creator's `runtime` default. An explicit workflow is recorded in the public application manifest and must match the requested value before the target is finalized.
 
 The two Editions are separate deliverables and deployments. `standalone` produces the single-tenant projection and omits the Platform bundle; `multi-tenant` produces the Platform/tenant-management projection. Their runtime directories, configuration and deployment identities must not be mixed, and normal APP/scaffold upgrades remain within the recorded Edition rather than changing Edition as a side effect.
 
