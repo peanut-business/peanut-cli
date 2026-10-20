@@ -21,10 +21,11 @@ peanut upgrade --plan [--ref <version-or-tag>] [--path <application>]
 peanut upgrade [--ref <version-or-tag>] [--path <application>]
 peanut recipe list [--path <application>]
 peanut recipe status [<id>] [--path <application>]
-peanut recipe add github-ci [--path <application>]
+peanut recipe add app-ci --path <application>
+peanut recipe add scaffold-ci --path <scaffold>
 ```
 
-The current source catalog selects `github-ci@1.0.1` for **new** Recipe installs. It passes the real APP root and explicit `--server-only` to the existing package engine; 1.0.0 and the inactive 1.1.0 source snapshots remain unchanged. Installing this CLI source does not publish it, upgrade an already installed Recipe, or run CI.
+The current source catalog separates `app-ci@1.0.0` from `scaffold-ci@1.0.0`. APP CI calls the APP's existing server-only producer with its explicit root. Scaffold CI calls the same native template producer as `peanut release`, serially for both Editions, and uploads the four fixed template files. These workflows prepare candidates; formal GitHub publication still requires the release qualification and authorized CI publication path. The CLI repository's own release workflow publishes only CLI artifacts. Source installation does not publish or execute CI.
 `peanut create` defaults to the latest official stable GitHub template attachment. `--ref <version>` pins a release; prereleases require explicit `--channel prerelease`. Releases without the paired Edition template attachments fail closed. Local `--archive` and `--manifest` must be absolute and cannot be combined with release/channel selection. Local provenance remains development/local. There is no Git-source or dev fallback, implicit dependency install, database operation or service start.
 
 Template packages require `peanut.template-package.v1` and its complete creation payload. Historical releases without these attachments cannot be consumed by archive creation; updating CLI does not retrofit published assets.
@@ -41,7 +42,7 @@ Creation validates package/file digests, fixed source, Edition, member uniquenes
 
 ### Explicit implementation boundary
 
-`release` delegates to the scaffold's native `scripts/build-scaffold-release`, once per Edition with a fixed source commit. `package` delegates to the APP's own `scripts/package-release.sh --server-only` and builds its declared clients; normal build dependencies must be prepared separately. Existing outputs are refused. Defaults use the source/APP parent's `release/scaffold/<version>/<build-id>` or `release/apps/<slug>/<version>/<build-id>`; explicit absolute `--output` supports CI. These commands do not publish or deploy. The Recipe catalog remains `github-ci@1.0.1`; the scaffold/app CI split is still pending. No force/recreate mode exists. Existing APPs use the fixed-plan upgrade path below.
+`release` delegates to the scaffold's native `scripts/build-scaffold-release`, once per Edition with a fixed source commit. `package` delegates to the APP's own `scripts/package-release.sh --server-only` and builds its declared clients; normal build dependencies must be prepared separately. Existing outputs are refused. Defaults use the source/APP parent's `release/scaffold/<version>/<build-id>` or `release/apps/<slug>/<version>/<build-id>`; explicit absolute `--output` supports CI. These commands do not publish or deploy. Recipes select the matching scaffold or APP repository contract before writing workflows. No force/recreate mode exists. Existing APPs use the fixed-plan upgrade path below.
 
 ## Development APP upstream upgrades
 
@@ -70,7 +71,7 @@ After a failed apply, inspect the native journal and use `peanut upgrade --recov
 
 Native conflict plans use exit 2 with a valid blocked JSON response; CLI preserves the plan binding and returns exit 1. Invalid inputs, download failures or native errors return exit 2. A successful check, plan, apply or recovery returns exit 0. The package/plan/native journal remain under `.peanut/upgrades/` for review and recovery.
 
- `github-ci@1.1.0` is carried as an inactive candidate and is not selected by the catalog.
+The retired combined `github-ci` source bundles are removed from the current catalog. Existing installed Recipe baselines and customized workflows are preserved; adding a new Recipe refuses a colliding file instead of overwriting it.
 
 The CLI has no npm runtime dependencies. It reads stable public Peanut application/release/Recipe protocols and does not import implementation source from Peanut Admin or either Core repository.
 

@@ -30,7 +30,7 @@ function usage() {
         + '       peanut upgrade --recover-plan <plan> [--path <application>]\n'
         + '       peanut service collaboration plan|enable|status|disable --path <application> [--configuration <non-secret-json>] [--expected-revision <n>] [--probe] [--drain-id <original-id>]\n'
         + '       peanut recipe list|status [<id>] [--path <application>]\n'
-        + '       peanut recipe add github-ci [--path <application>]\n'
+        + '       peanut recipe add app-ci|scaffold-ci [--path <repository>]\n'
         + 'Interactive create prompts for an Edition when --edition is omitted; non-interactive create requires --edition.\n'
         + 'Edition, profile and workflow are fixed by the selected template package; an explicit mismatch is refused.\n'
         + 'Standalone and multi-tenant are separate application artifacts and deployments; normal upgrades remain within the same Edition.\n'

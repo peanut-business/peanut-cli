@@ -95,35 +95,35 @@ test('version and help work without an application checkout', () => {
     assert.equal(result.stdout.trim(), `Peanut CLI ${JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version}`);
     result = spawnSync(process.execPath, [BIN, '--help'], { encoding: 'utf8' });
     assert.equal(result.status, 0);
-    assert.match(result.stdout, /recipe add github-ci/);
+    assert.match(result.stdout, /recipe add app-ci/);
 });
 
 test('add installs exact recipe baseline without changing application identity', (t) => {
     const { app } = createFixture(t);
     const original = fs.readFileSync(path.join(app, '.peanut/application-manifest.json'));
-    const result = cli(app, ['recipe', 'add', 'github-ci']);
-    assert.equal(result.version, '1.0.1');
-    const state = JSON.parse(fs.readFileSync(path.join(app, '.peanut/recipes/github-ci/manifest.json'), 'utf8'));
+    const result = cli(app, ['recipe', 'add', 'app-ci']);
+    assert.equal(result.version, '1.0.0');
+    const state = JSON.parse(fs.readFileSync(path.join(app, '.peanut/recipes/app-ci/manifest.json'), 'utf8'));
     assert.equal(state.protocol, 'peanut.recipe-installation.v1');
     for (const entry of state.manifest.files) {
         const target = path.join(app, entry.path);
-        const baseline = path.join(app, '.peanut/recipes/github-ci/baseline/files', entry.path);
-        assert.equal(entry.owner, 'recipe:github-ci');
+        const baseline = path.join(app, '.peanut/recipes/app-ci/baseline/files', entry.path);
+        assert.equal(entry.owner, 'recipe:app-ci');
         assert.deepEqual(fs.readFileSync(target), fs.readFileSync(baseline));
         assert.equal(sha256File(target), entry.sha256);
         assert.equal(fs.statSync(target).mode & 0o777, entry.mode);
     }
     assert.deepEqual(fs.readFileSync(path.join(app, '.peanut/application-manifest.json')), original);
-    assert.equal(fs.existsSync(path.join(app, '.peanut/recipes/.github-ci.installing')), false);
+    assert.equal(fs.existsSync(path.join(app, '.peanut/recipes/.app-ci.installing')), false);
 });
 
 test('repeat add preserves customization and baseline', (t) => {
     const { app } = createFixture(t);
-    cli(app, ['recipe', 'add', 'github-ci']);
-    const baseline = path.join(app, '.peanut/recipes/github-ci/manifest.json');
+    cli(app, ['recipe', 'add', 'app-ci']);
+    const baseline = path.join(app, '.peanut/recipes/app-ci/manifest.json');
     const before = fs.readFileSync(baseline);
     fs.writeFileSync(workflow(app), 'downstream customization\n');
-    const result = cli(app, ['recipe', 'add', 'github-ci']);
+    const result = cli(app, ['recipe', 'add', 'app-ci']);
     assert.equal(fs.readFileSync(workflow(app), 'utf8'), 'downstream customization\n');
     assert.deepEqual(fs.readFileSync(baseline), before);
     assert.equal(result.files[0].status, 'modified');
@@ -133,7 +133,7 @@ test('later path conflict prevents partial install', (t) => {
     const { app } = createFixture(t);
     fs.mkdirSync(path.dirname(workflow(app, 'release.yml')), { recursive: true });
     fs.writeFileSync(workflow(app, 'release.yml'), 'keep\n');
-    assert.match(cli(app, ['recipe', 'add', 'github-ci'], 2), /RECIPE_PATH_CONFLICT/);
+    assert.match(cli(app, ['recipe', 'add', 'app-ci'], 2), /RECIPE_PATH_CONFLICT/);
     assert.equal(fs.existsSync(workflow(app)), false);
     assert.equal(fs.existsSync(path.join(app, '.peanut/recipes')), false);
     assert.equal(fs.readFileSync(workflow(app, 'release.yml'), 'utf8'), 'keep\n');
@@ -142,15 +142,15 @@ test('later path conflict prevents partial install', (t) => {
 test('identical existing bytes do not grant recipe ownership', (t) => {
     const { app } = createFixture(t);
     fs.mkdirSync(path.dirname(workflow(app)), { recursive: true });
-    fs.copyFileSync(path.join(ROOT, 'recipes/github-ci/1.0.1/files/.github/workflows/ci.yml'), workflow(app));
-    assert.match(cli(app, ['recipe', 'add', 'github-ci'], 2), /RECIPE_PATH_CONFLICT/);
+    fs.copyFileSync(path.join(ROOT, 'recipes/app-ci/1.0.0/files/.github/workflows/ci.yml'), workflow(app));
+    assert.match(cli(app, ['recipe', 'add', 'app-ci'], 2), /RECIPE_PATH_CONFLICT/);
 });
 
 test('old scaffold ownership requires explicit transition', (t) => {
     const { app, manifest, saveManifest } = createFixture(t);
     manifest.files = [{ path: '.github/workflows/ci.yml', classification: 'managed' }];
     saveManifest();
-    assert.match(cli(app, ['recipe', 'add', 'github-ci'], 2), /RECIPE_OWNERSHIP_CONFLICT/);
+    assert.match(cli(app, ['recipe', 'add', 'app-ci'], 2), /RECIPE_OWNERSHIP_CONFLICT/);
     assert.equal(fs.existsSync(workflow(app)), false);
 });
 
@@ -159,35 +159,35 @@ test('symlink target path is rejected', (t) => {
     const outside = path.join(temp, 'outside');
     fs.mkdirSync(outside);
     fs.symlinkSync(outside, path.join(app, '.github'), 'dir');
-    assert.match(cli(app, ['recipe', 'add', 'github-ci'], 2), /SYMLINK_REJECTED/);
+    assert.match(cli(app, ['recipe', 'add', 'app-ci'], 2), /SYMLINK_REJECTED/);
     assert.deepEqual(fs.readdirSync(outside), []);
 });
 
 test('pending install is not replayed', (t) => {
     const { app } = createFixture(t);
-    fs.mkdirSync(path.join(app, '.peanut/recipes/.github-ci.installing'), { recursive: true });
-    assert.equal(cli(app, ['recipe', 'status', 'github-ci']).recipes[0].status, 'recovery_required');
-    assert.match(cli(app, ['recipe', 'add', 'github-ci'], 2), /RECOVERY_REQUIRED/);
+    fs.mkdirSync(path.join(app, '.peanut/recipes/.app-ci.installing'), { recursive: true });
+    assert.equal(cli(app, ['recipe', 'status', 'app-ci']).recipes[0].status, 'recovery_required');
+    assert.match(cli(app, ['recipe', 'add', 'app-ci'], 2), /RECOVERY_REQUIRED/);
     assert.equal(fs.existsSync(workflow(app)), false);
 });
 
 test('baseline corruption is rejected', (t) => {
     const { app } = createFixture(t);
-    cli(app, ['recipe', 'add', 'github-ci']);
-    fs.writeFileSync(path.join(app, '.peanut/recipes/github-ci/baseline/files/.github/workflows/ci.yml'), 'corrupt');
+    cli(app, ['recipe', 'add', 'app-ci']);
+    fs.writeFileSync(path.join(app, '.peanut/recipes/app-ci/baseline/files/.github/workflows/ci.yml'), 'corrupt');
     assert.match(cli(app, ['recipe', 'status'], 2), /BASELINE_DIGEST_MISMATCH/);
 });
 
 test('source manifest corruption is rejected', (t) => {
     const { app } = createFixture(t);
-    cli(app, ['recipe', 'add', 'github-ci']);
-    fs.writeFileSync(path.join(app, '.peanut/recipes/github-ci/source-manifest.json'), '{}');
+    cli(app, ['recipe', 'add', 'app-ci']);
+    fs.writeFileSync(path.join(app, '.peanut/recipes/app-ci/source-manifest.json'), '{}');
     assert.match(cli(app, ['recipe', 'status'], 2), /MANIFEST_DIGEST_MISMATCH/);
 });
 
 test('status reports missing and mode changes', (t) => {
     const { app } = createFixture(t);
-    cli(app, ['recipe', 'add', 'github-ci']);
+    cli(app, ['recipe', 'add', 'app-ci']);
     fs.chmodSync(workflow(app), 0o755);
     fs.unlinkSync(workflow(app, 'release.yml'));
     assert.deepEqual(cli(app, ['status']).recipes[0].files.map((file) => file.status), ['modified', 'missing']);
@@ -198,18 +198,18 @@ test('invalid id, unknown recipe, and missing application fail closed', (t) => {
     assert.match(cli(app, ['recipe', 'add', '../escape'], 2), /ID_INVALID/);
     assert.match(cli(app, ['recipe', 'add', 'gitlab-ci'], 2), /RECIPE_UNKNOWN/);
     fs.unlinkSync(path.join(app, '.peanut/application-manifest.json'));
-    assert.match(cli(app, ['recipe', 'add', 'github-ci'], 2), /APPLICATION_MANIFEST_REQUIRED/);
+    assert.match(cli(app, ['recipe', 'add', 'app-ci'], 2), /APPLICATION_MANIFEST_REQUIRED/);
     assert.match(cli(app, ['status'], 2), /APPLICATION_MANIFEST_REQUIRED/);
 });
 
-test('doctor is read-only and catalog selects 1.0.1 for new installs', (t) => {
+test('doctor is read-only and catalog selects 1.0.0 for new installs', (t) => {
     const { app } = createFixture(t);
     const before = [...walk(app)].sort();
     const result = cli(app, ['doctor'], 1);
     assert.equal(result.status, 'incomplete');
     assert.equal(result.checks['server/composer.lock'], false);
     assert.equal(cli(app, ['status']).kind, 'application');
-    assert.deepEqual(cli(app, ['recipe', 'list']).available, { 'github-ci': '1.0.1' });
+    assert.deepEqual(cli(app, ['recipe', 'list']).available, { 'app-ci': '1.0.0', 'scaffold-ci': '1.0.0' });
     assert.deepEqual([...walk(app)].sort(), before);
 });
 
@@ -218,33 +218,62 @@ test('corrupt bundle is rejected before application writes', (t) => {
     const tool = path.join(temp, 'tool');
     fs.mkdirSync(tool);
     fs.cpSync(path.join(ROOT, 'recipes'), path.join(tool, 'recipes'), { recursive: true });
-    fs.writeFileSync(path.join(tool, 'recipes/github-ci/1.0.1/files/.github/workflows/release.yml'), 'corrupt');
-    assert.throws(() => new RecipeManager(tool).add(app, 'github-ci'), /SOURCE_DIGEST_MISMATCH/);
+    fs.writeFileSync(path.join(tool, 'recipes/app-ci/1.0.0/files/.github/workflows/release.yml'), 'corrupt');
+    assert.throws(() => new RecipeManager(tool).add(app, 'app-ci'), /SOURCE_DIGEST_MISMATCH/);
     assert.equal(fs.existsSync(workflow(app)), false);
 });
 
 test('server-only recipe supplies explicit application root and immutable file digests', () => {
-    const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'recipes/github-ci/1.0.1/manifest.json'), 'utf8'));
-    for (const entry of manifest.files) assert.equal(sha256File(path.join(ROOT, 'recipes/github-ci/1.0.1/files', entry.path)), entry.sha256);
-    const release = fs.readFileSync(path.join(ROOT, 'recipes/github-ci/1.0.1/files/.github/workflows/release.yml'), 'utf8');
+    const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'recipes/app-ci/1.0.0/manifest.json'), 'utf8'));
+    for (const entry of manifest.files) assert.equal(sha256File(path.join(ROOT, 'recipes/app-ci/1.0.0/files', entry.path)), entry.sha256);
+    const release = fs.readFileSync(path.join(ROOT, 'recipes/app-ci/1.0.0/files/.github/workflows/release.yml'), 'utf8');
     assert.match(release, /--application-root="\$GITHUB_WORKSPACE" --server-only/);
     assert.match(release, /application-release\.tar\.gz\.manifest\.json/);
     assert.doesNotMatch(release, /contents: write|git push|gh release create/);
 });
 
-test('new catalog does not upgrade or rewrite an installed 1.0.0 baseline', (t) => {
-    const { temp, app } = createFixture(t);
-    const tool = path.join(temp, 'old-tool'); fs.mkdirSync(tool);
-    fs.cpSync(path.join(ROOT, 'recipes'), path.join(tool, 'recipes'), { recursive: true });
-    const catalog = path.join(tool, 'recipes/catalog.json');
-    fs.writeFileSync(catalog, JSON.stringify({ schema_version: 1, protocol: 'peanut.recipe-catalog.v1', recipes: { 'github-ci': '1.0.0' } }));
-    new RecipeManager(tool).add(app, 'github-ci');
-    const baseline = path.join(app, '.peanut/recipes/github-ci/source-manifest.json');
-    const before = fs.readFileSync(baseline);
+test('new catalog preserves the retired installed Recipe without reinstalling or overwriting it', (t) => {
+    const { app } = createFixture(t);
+    new RecipeManager(ROOT).add(app, 'app-ci');
+    const directory = path.join(app, '.peanut/recipes/github-ci');
+    fs.renameSync(path.join(app, '.peanut/recipes/app-ci'), directory);
+    const source = path.join(directory, 'source-manifest.json');
+    const statePath = path.join(directory, 'manifest.json');
+    const state = JSON.parse(fs.readFileSync(statePath));
+    state.recipe = 'github-ci';
+    state.manifest.recipe = 'github-ci';
+    state.manifest.version = '1.0.1';
+    delete state.manifest.repository_kind;
+    for (const entry of state.manifest.files) entry.owner = 'recipe:github-ci';
+    fs.writeFileSync(source, JSON.stringify(state.manifest));
+    state.manifest_sha256 = sha256File(source);
+    fs.writeFileSync(statePath, JSON.stringify(state));
+    const before = fs.readFileSync(source);
+    const fileBefore = fs.readFileSync(workflow(app, 'release.yml'));
     const result = new RecipeManager(ROOT).add(app, 'github-ci');
-    assert.equal(result.version, '1.0.0');
-    assert.deepEqual(fs.readFileSync(baseline), before);
-    assert.equal(sha256File(workflow(app, 'release.yml')), sha256File(path.join(ROOT, 'recipes/github-ci/1.0.0/files/.github/workflows/release.yml')));
+    assert.equal(result.version, '1.0.1');
+    assert.deepEqual(fs.readFileSync(source), before);
+    assert.deepEqual(fs.readFileSync(workflow(app, 'release.yml')), fileBefore);
+    assert.throws(() => new RecipeManager(ROOT).add(app, 'app-ci'), /PATH_CONFLICT/);
+});
+
+test('scaffold Recipe uses its own repository contract and both template Editions', (t) => {
+    const { temp, app } = createFixture(t);
+    assert.throws(() => new RecipeManager(ROOT).add(app, 'scaffold-ci'), /SCAFFOLD_REQUIRED/);
+    const scaffold = path.join(temp, 'scaffold');
+    fs.mkdirSync(path.join(scaffold, 'scaffold'), { recursive: true });
+    fs.mkdirSync(path.join(scaffold, 'scripts'));
+    fs.writeFileSync(path.join(scaffold, 'scaffold/application-template-inventory.json'), JSON.stringify({ protocol: 'peanut.create-app-inventory.v2', template_version: '5.0.2', files: [] }));
+    fs.writeFileSync(path.join(scaffold, 'release-versions.json'), JSON.stringify({ scaffold_template: '5.0.2' }));
+    fs.writeFileSync(path.join(scaffold, 'scripts/build-scaffold-release'), '<?php');
+    assert.throws(() => new RecipeManager(ROOT).add(scaffold, 'app-ci'), /APPLICATION_MANIFEST_REQUIRED/);
+    const result = new RecipeManager(ROOT).add(scaffold, 'scaffold-ci');
+    assert.equal(result.status, 'installed');
+    const release = fs.readFileSync(workflow(scaffold, 'scaffold-release.yml'), 'utf8');
+    assert.match(release, /for edition in standalone multi-tenant/);
+    assert.match(release, /php scripts\/build-scaffold-release/);
+    assert.doesNotMatch(release, /package-release\.sh|--server-only|gh release create/);
+    assert.equal(fs.existsSync(workflow(scaffold, 'release.yml')), false);
 });
 
 test('create refuses the retired Git-source option before obtaining source or writing target', (t) => {

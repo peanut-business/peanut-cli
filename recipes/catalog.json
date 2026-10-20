@@ -2,6 +2,7 @@
     "schema_version": 1,
     "protocol": "peanut.recipe-catalog.v1",
     "recipes": {
-        "github-ci": "1.0.1"
+        "app-ci": "1.0.0",
+        "scaffold-ci": "1.0.0"
     }
 }
