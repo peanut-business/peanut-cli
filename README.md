@@ -6,11 +6,14 @@ Peanut CLI is the source of truth for the global `peanut` command. It is indepen
 
 ## Current development line
 
-CLI `0.3.2` implements project creation and native development APP upstream upgrades:
+The current development source implements archive-based creation and native release/package entries. These changes are not claimed as a published CLI version until a release receipt exists.
 
 ```sh
 peanut --version
-peanut create <target> --name <name> --slug <slug> --package <vendor/name> [--edition standalone|multi-tenant] [--workflow none|runtime|full] [--channel development|stable|prerelease] [--ref <git-ref-or-published-tag>]
+peanut create /absolute/new-app --name "Business App" --slug business-app --package example/business-app --edition standalone
+peanut create /absolute/new-app --name "Business App" --slug business-app --package example/business-app --edition standalone --archive /absolute/peanut-scaffold-standalone.tgz --manifest /absolute/peanut-scaffold-standalone.json
+peanut release --path /absolute/scaffold --output /absolute/new-release
+peanut package --path /absolute/app --output /absolute/new-server-package
 peanut doctor [--path <application>]
 peanut status [--path <application>]
 peanut upgrade --check [--path <application>]
@@ -22,23 +25,23 @@ peanut recipe add github-ci [--path <application>]
 ```
 
 The current source catalog selects `github-ci@1.0.1` for **new** Recipe installs. It passes the real APP root and explicit `--server-only` to the existing package engine; 1.0.0 and the inactive 1.1.0 source snapshots remain unchanged. Installing this CLI source does not publish it, upgrade an already installed Recipe, or run CI.
-`peanut create` defaults to the public `peanut-business/peanut-admin-code` repository, `dev` ref and `development` channel. Use `--ref <tag-or-commit>` to pin a development source; `--source <git-url-or-path>` selects a compatible custom development source. `--channel stable` chooses the latest published stable release unless `--ref` selects a specific published version. `--channel prerelease` chooses the highest published version, including stable versions, unless pinned. Formal channels require the official repository and verify the published Release manifest, SHA-bound candidate lock, source commit/tree, scaffold manifest and template inventory. The recorded channel reflects the selected release, so a stable selection through `prerelease` is recorded as stable.
+`peanut create` defaults to the latest official stable GitHub template attachment. `--ref <version>` pins a release; prereleases require explicit `--channel prerelease`. Releases without the paired Edition template attachments fail closed. Local `--archive` and `--manifest` must be absolute and cannot be combined with release/channel selection. Local provenance remains development/local. There is no Git-source or dev fallback, implicit dependency install, database operation or service start.
 
-These source and channel flows require a selected Code source with the native provenance, release-adoption and source-selection interfaces. Historical releases, including Stable 4.0.3, lack these interfaces; updating CLI `dev` does not retrofit them or make these operations executable against those releases.
+Template packages require `peanut.template-package.v1` and its complete creation payload. Historical releases without these attachments cannot be consumed by archive creation; updating CLI does not retrofit published assets.
 
 When a developer runs `peanut create` in an interactive terminal without `--edition`, the CLI requires an explicit choice between `multi-tenant` and `standalone`. Machine/CI usage remains fail-closed and must pass `--edition`. There is no implicit Edition default.
 
-`--profile` selects the file profile (`minimal|standard|full`); `--workflow` independently selects integration (`none|runtime|full`) within either Edition. Omitting `--workflow` keeps the native creator's `runtime` default. An explicit workflow is recorded in the public application manifest and must match the requested value before the target is finalized.
+Profile and Workflow are fixed by the template. Optional `--profile`/`--workflow` are assertions; mismatches fail. `--application-version` sets the independent APP version; omission uses the template's declared default. Product names accept Unicode and spaces up to 80 UTF-8 bytes; control characters and code/markup delimiters are rejected.
 
 The two Editions are separate deliverables and deployments. `standalone` produces the single-tenant projection and omits the Platform bundle; `multi-tenant` produces the Platform/tenant-management projection. Their runtime directories, configuration and deployment identities must not be mixed, and normal APP/scaffold upgrades remain within the recorded Edition rather than changing Edition as a side effect.
 
 For product validation, shared code and the common lifecycle do not need two identical full test runs. Use the maintainer's two registered permanent APPs for post-package validation; do not create a new test APP per attempt. Shared lifecycle evidence may be reused only for unchanged inputs and genuinely shared behavior. Multi-tenant should be the primary broad functional/regression target because it includes the additional Platform, tenant-management, Host and tenant-switching surfaces. The other Edition still requires its Edition projection checks and critical create/install/start/login/deploy/upgrade smoke path. Edition-specific behavior must be tested in the Edition that owns it.
 
-Creation is fail-closed: it stages the application first, verifies the native `create-app` result, and only then moves the application into the requested target. The native application manifest records the selected repository, requested ref, channel, release version (null for development), and actual generation commit/tree/inventory/Edition profile. `template.version` is a compatibility baseline, not proof that development source was published. The CLI checks the native identity before moving the staging directory. A failed creation does not leave the requested target behind.
+Creation validates package/file digests, fixed source, Edition, member uniqueness, regular-file types, size and path boundaries before staging. It records package provenance and rebuilds final file/tree hashes and managed baselines while retaining app-owned defaults. Official Module contents remain fixed; APP branding changes host identity. Composer content-hash and API input hashes use final bytes without dependency resolution. An absent or strictly empty target is accepted; hidden files, `.git`, any other content and symlink path components are refused. Failure removes only the unadopted staging tree.
 
 ### Explicit implementation boundary
 
-The approved simpler product direction is default official template archives, an explicit local archive option, and creation into a strictly empty directory. Those changes are **not implemented in this CLI source**: the current source/ref flow still obtains Code and rejects existing targets, including empty directories. `--source` is a Git source, not a tarball parameter. Do not invent `--force`, rename an APP during an upgrade, or treat an approved design as a working command. Existing APPs use the fixed-plan upgrade path below; their installed docs/baselines change only through an actual accepted upgrade.
+`release` delegates to the scaffold's native `scripts/build-scaffold-release`, once per Edition with a fixed source commit. `package` delegates to the APP's own `scripts/package-release.sh --server-only` and builds its declared clients; normal build dependencies must be prepared separately. Existing outputs are refused. Defaults use the source/APP parent's `release/scaffold/<version>/<build-id>` or `release/apps/<slug>/<version>/<build-id>`; explicit absolute `--output` supports CI. These commands do not publish or deploy. The Recipe catalog remains `github-ci@1.0.1`; the scaffold/app CI split and local-package upgrade consumption are still pending. No force/recreate mode exists. Existing APPs use the fixed-plan upgrade path below.
 
 ## Development APP upstream upgrades
 

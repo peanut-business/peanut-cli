@@ -247,55 +247,16 @@ test('new catalog does not upgrade or rewrite an installed 1.0.0 baseline', (t) 
     assert.equal(sha256File(workflow(app, 'release.yml')), sha256File(path.join(ROOT, 'recipes/github-ci/1.0.0/files/.github/workflows/release.yml')));
 });
 
-test('create stages both Editions from an explicit git source and records source identity', (t) => {
-    const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'peanut-cli-create-'));
+test('create refuses the retired Git-source option before obtaining source or writing target', (t) => {
+    const temp = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'peanut-cli-create-'));
     t.after(() => fs.rmSync(temp, { recursive: true, force: true }));
-    const source = path.join(temp, 'source');
-    fs.mkdirSync(path.join(source, 'scripts'), { recursive: true });
-    fs.mkdirSync(path.join(source, 'server/vendor'), { recursive: true });
-    fs.writeFileSync(path.join(source, 'server/vendor/autoload.php'), '<?php\n');
-    fs.writeFileSync(path.join(source, 'scripts/create-app'), `<?php
-$options = [];
-foreach (array_slice($argv, 1) as $arg) {
-    if (preg_match('/^--([^=]+)=(.*)$/', $arg, $m)) $options[$m[1]] = $m[2];
-}
-mkdir($options['target'] . '/.peanut', 0775, true);
-file_put_contents($options['target'] . '/.peanut/application-manifest.json', json_encode(['ok' => true]));
-echo json_encode([
-    'status' => 'created',
-    'target' => $options['target'],
-    'template_version' => '4.0.0-rc.18',
-    'application_version' => '0.1.0',
-    'profile' => $options['profile'] ?? 'standard',
-    'edition' => $options['edition'],
-    'source_commit' => str_repeat('a', 40),
-    'generation_source_commit' => str_repeat('b', 40),
-    'managed_tree_sha256' => str_repeat('c', 64),
-    'app_owned_tree_sha256' => str_repeat('d', 64),
-]);
-`);
-    spawnSync('git', ['init', '-b', 'dev'], { cwd: source, encoding: 'utf8' });
-    spawnSync('git', ['config', 'user.email', 'test@example.invalid'], { cwd: source });
-    spawnSync('git', ['config', 'user.name', 'Peanut Test'], { cwd: source });
-    spawnSync('git', ['add', '.'], { cwd: source });
-    spawnSync('git', ['commit', '-m', 'fixture'], { cwd: source, encoding: 'utf8' });
-
-    for (const edition of ['standalone', 'multi-tenant']) {
-        const target = path.join(temp, `created-app-${edition}`);
-        const result = spawnSync(process.execPath, [
-            BIN, 'create', target,
-            '--name', 'Created App', '--slug', 'created-app', '--package', 'example/created-app',
-            '--edition', edition, '--source', source, '--ref', 'dev',
-        ], { encoding: 'utf8' });
-        assert.equal(result.status, 0, result.stderr + result.stdout);
-        const output = JSON.parse(result.stdout);
-        assert.equal(output.status, 'created');
-        assert.equal(output.edition, edition);
-        assert.equal(output.source.ref, 'dev');
-        assert.match(output.source.commit, /^[0-9a-f]{40}$/);
-        assert.equal(fs.existsSync(path.join(target, '.peanut/application-manifest.json')), true);
-        assert.equal([...fs.readdirSync(temp)].some((name) => name.startsWith(`.created-app-${edition}.peanut-create-`)), false);
-    }
+    const target = path.join(temp, 'target');
+    const result = spawnSync(process.execPath, [BIN, 'create', target,
+        '--name', 'Created App', '--slug', 'created-app', '--package', 'example/created-app',
+        '--edition', 'standalone', '--source', 'https://example.invalid/retired.git'], { encoding: 'utf8' });
+    assert.equal(result.status, 2);
+    assert.match(result.stderr, /PEANUT_CREATE_ARGUMENTS_INVALID/);
+    assert.equal(fs.existsSync(target), false);
 });
 
 test('non-interactive create requires an explicit Edition', (t) => {

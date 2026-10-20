@@ -9,6 +9,7 @@ import {
 } from '../lib/protocol.js';
 import { RecipeManager } from '../lib/recipe-manager.js';
 import { createProject } from '../lib/create-project.js';
+import { buildProject, parseBuildArguments } from '../lib/build-project.js';
 import { upgradeProject } from '../lib/upgrade-project.js';
 import { parseCollaborationArguments, serviceCollaboration } from '../lib/service-collaboration.js';
 
@@ -18,8 +19,11 @@ const CLI_VERSION = readJsonObject(path.join(toolRoot, 'package.json')).version;
 function usage() {
     process.stdout.write(
         `Peanut CLI ${CLI_VERSION}\n`
-        + 'Usage: peanut create <target> --name <name> --slug <slug> --package <vendor/name> [--edition standalone|multi-tenant] [--profile <profile>] [--workflow none|runtime|full] [--application-version <semver>] [--source <git-url-or-path>] [--ref <git-ref>] [--channel development|stable|prerelease]\n'
+        + 'Usage: peanut create <absolute-target> --name <name> --slug <slug> --package <vendor/name> [--edition standalone|multi-tenant] [--application-version <semver>] [--ref <version>] [--channel stable|prerelease]\n'
+        + '       peanut create <absolute-target> --name <name> --slug <slug> --package <vendor/name> --edition standalone|multi-tenant --archive <absolute-template.tgz> --manifest <absolute-template.json>\n'
         + '       peanut doctor|status [--path <application>]\n'
+        + '       peanut release [--path <scaffold>] [--version <semver>] [--source-commit <full-sha>] [--workflow none|runtime|full] [--output <absolute-new-directory>]\n'
+        + '       peanut package [--path <application>] [--output <absolute-new-directory>]\n'
         + '       peanut upgrade [--check|--plan] [--ref <version-or-tag>] [--channel stable|prerelease] [--confirm-major-upgrade] [--path <application>]\n'
         + '       peanut upgrade --apply-plan <plan> [--confirm-plan-sha256 <digest> --preserve-paths <paths|-> --replace-paths <paths|->] [--confirm-major-upgrade] [--path <application>]\n'
         + '       peanut upgrade --recover-plan <plan> [--path <application>]\n'
@@ -27,9 +31,9 @@ function usage() {
         + '       peanut recipe list|status [<id>] [--path <application>]\n'
         + '       peanut recipe add github-ci [--path <application>]\n'
         + 'Interactive create prompts for an Edition when --edition is omitted; non-interactive create requires --edition.\n'
-        + '--profile selects the file profile; --workflow independently selects integrations for either Edition (none|runtime|full). Omitted --workflow keeps the native runtime default.\n'
+        + 'Edition, profile and workflow are fixed by the selected template package; an explicit mismatch is refused.\n'
         + 'Standalone and multi-tenant are separate application artifacts and deployments; normal upgrades remain within the same Edition.\n'
-        + 'Create defaults to the public Peanut Admin repository at the latest dev ref; pin --ref for reproducible creation.\n'
+        + 'Create defaults to the latest official stable template attachment. Local archives require their paired manifest. No Git clone, PHP, dependency installation, database or service operation occurs. Target must be absent or strictly empty, including hidden files.\n'
         + 'Fixed-release APP discovery stays within the current major; development APP checks the latest published release. Applying a development source transition requires explicit --ref.\n'
         + 'Risk feature: cross-major upgrades may break custom business code, dependencies, APIs or migrations. Review the plan, keep a recoverable backup and resolve known risks before attempting apply.\n'
         + 'Cross-major apply requires --confirm-major-upgrade. AI/Agent operators must explain source to target, risks and plan and obtain human authorization before passing this flag; prior explicit authorization for this upgrade or a defined cross-major scope is sufficient, but generic development authorization is not.\n',
@@ -74,7 +78,7 @@ function parseCreateArguments(raw) {
     const map = new Map([
         ['--name', 'name'], ['--slug', 'slug'], ['--package', 'package'], ['--edition', 'edition'],
         ['--profile', 'profile'], ['--workflow', 'workflow'], ['--application-version', 'applicationVersion'],
-        ['--source', 'source'], ['--ref', 'ref'], ['--channel', 'channel'],
+        ['--archive', 'archive'], ['--manifest', 'manifest'], ['--ref', 'ref'], ['--channel', 'channel'],
     ]);
     for (let index = 1; index < raw.length; index += 1) {
         const argument = raw[index];
@@ -151,6 +155,10 @@ function parseUpgradeArguments(raw) {
 }
 
 async function main() {
+    if (['release', 'package'].includes(process.argv[2])) {
+        output(buildProject(process.argv[2], parseBuildArguments(process.argv.slice(3))));
+        return 0;
+    }
     if (process.argv[2] === 'service') {
         if (process.argv[3] !== 'collaboration') throw new Error('PEANUT_SERVICE_UNSUPPORTED');
         const { result, exitCode } = serviceCollaboration(parseCollaborationArguments(process.argv.slice(4)));
