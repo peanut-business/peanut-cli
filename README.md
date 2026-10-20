@@ -21,7 +21,7 @@ peanut recipe status [<id>] [--path <application>]
 peanut recipe add github-ci [--path <application>]
 ```
 
-`github-ci@1.0.0` remains the active default Recipe.
+The current source catalog selects `github-ci@1.0.1` for **new** Recipe installs. It passes the real APP root and explicit `--server-only` to the existing package engine; 1.0.0 and the inactive 1.1.0 source snapshots remain unchanged. Installing this CLI source does not publish it, upgrade an already installed Recipe, or run CI.
 `peanut create` defaults to the public `peanut-business/peanut-admin-code` repository, `dev` ref and `development` channel. Use `--ref <tag-or-commit>` to pin a development source; `--source <git-url-or-path>` selects a compatible custom development source. `--channel stable` chooses the latest published stable release unless `--ref` selects a specific published version. `--channel prerelease` chooses the highest published version, including stable versions, unless pinned. Formal channels require the official repository and verify the published Release manifest, SHA-bound candidate lock, source commit/tree, scaffold manifest and template inventory. The recorded channel reflects the selected release, so a stable selection through `prerelease` is recorded as stable.
 
 These source and channel flows require a selected Code source with the native provenance, release-adoption and source-selection interfaces. Historical releases, including Stable 4.0.3, lack these interfaces; updating CLI `dev` does not retrofit them or make these operations executable against those releases.
@@ -32,9 +32,13 @@ When a developer runs `peanut create` in an interactive terminal without `--edit
 
 The two Editions are separate deliverables and deployments. `standalone` produces the single-tenant projection and omits the Platform bundle; `multi-tenant` produces the Platform/tenant-management projection. Their runtime directories, configuration and deployment identities must not be mixed, and normal APP/scaffold upgrades remain within the recorded Edition rather than changing Edition as a side effect.
 
-For product validation, shared code and the common lifecycle do not need two identical full test runs. A complete lifecycle can be proven with one Edition; the current permanent `peanut-app` may remain the Standalone lifecycle instance. Multi-tenant should be the primary broad functional/regression target because it includes the additional Platform, tenant-management, Host and tenant-switching surfaces. The other Edition still requires its Edition projection checks and critical create/install/start/login/deploy/upgrade smoke path. Edition-specific behavior must be tested in the Edition that owns it.
+For product validation, shared code and the common lifecycle do not need two identical full test runs. Use the maintainer's two registered permanent APPs for post-package validation; do not create a new test APP per attempt. Shared lifecycle evidence may be reused only for unchanged inputs and genuinely shared behavior. Multi-tenant should be the primary broad functional/regression target because it includes the additional Platform, tenant-management, Host and tenant-switching surfaces. The other Edition still requires its Edition projection checks and critical create/install/start/login/deploy/upgrade smoke path. Edition-specific behavior must be tested in the Edition that owns it.
 
 Creation is fail-closed: it stages the application first, verifies the native `create-app` result, and only then moves the application into the requested target. The native application manifest records the selected repository, requested ref, channel, release version (null for development), and actual generation commit/tree/inventory/Edition profile. `template.version` is a compatibility baseline, not proof that development source was published. The CLI checks the native identity before moving the staging directory. A failed creation does not leave the requested target behind.
+
+### Explicit implementation boundary
+
+The approved simpler product direction is default official template archives, an explicit local archive option, and creation into a strictly empty directory. Those changes are **not implemented in this CLI source**: the current source/ref flow still obtains Code and rejects existing targets, including empty directories. `--source` is a Git source, not a tarball parameter. Do not invent `--force`, rename an APP during an upgrade, or treat an approved design as a working command. Existing APPs use the fixed-plan upgrade path below; their installed docs/baselines change only through an actual accepted upgrade.
 
 ## Development APP upstream upgrades
 
@@ -82,7 +86,7 @@ The job packs a temporary archive of that fixed source, adding only the actual s
 
 The workflow creates a GitHub Release carrying that exact tarball and source receipt, then downloads both assets and compares their bytes. An existing release must have the same tag, published/prerelease state and exactly matching assets; it is never overwritten. Stable tags create formal releases and `-rc.N` tags create prereleases. Failed or uncertain publication must be inspected before retrying. This workflow does not publish to npm or require npm account credentials; registry publication and trust setup remain a separate future channel decision.
 
-For the published `v0.3.0` release, download the fixed official assets, bind the receipt to the annotated tag's commit and verify both SHA-256 and SRI before installing. These commands require Node.js, npm, Git and curl:
+The following is a **fixed historical v0.3.0 example, not a latest-version claim**. For that release, download the fixed official assets, bind the receipt to the annotated tag's commit and verify both SHA-256 and SRI before installing. These commands require Node.js, npm, Git and curl:
 
 ```sh
 set -euo pipefail
@@ -117,59 +121,12 @@ peanut --version
 - `dev`: development and integration
 - `main`: release line
 
-## Optional collaboration service
+## Optional collaboration service: compatibility boundary
 
-The APP owns its authenticated service configuration and safe drain. The separate
-`peanut-hocuspocus` project owns its pinned service source, Docker configuration
-and start/stop entry; its runtime mounts only its own program read-only. The APP
-provides authentication, loading, saving, file permissions and history through APIs.
-CLI calls only `server/docker/scripts/configure-collaboration.py` in the selected
-APP through Python 3, without a shell or importing APP implementation code:
+The current CLI wrapper validates only `peanut.collaboration.lifecycle.v1`. That is a **legacy APP protocol**, not the new direct-Compose contract in current Code/Hocuspocus. Do not run these wrapper commands against a new APP that no longer supplies this protocol, and do not weaken result validation to make it appear compatible.
 
-```sh
-peanut service collaboration plan --path /absolute/app
-peanut service collaboration enable --path /absolute/app --configuration collaboration-configuration.json --expected-revision 0
-peanut service collaboration status --path /absolute/app
-peanut service collaboration status --path /absolute/app --probe
-peanut service collaboration disable --path /absolute/app --drain-id original-stable-id
-```
+For current Code, use the APP-owned `server/docker/scripts/configure-collaboration.py` contract and the matching Hocuspocus README/Compose configuration. PHP decides identity, tenant membership, owner and read/write permissions; Node executes trustworthy grants, rooms, expiry/revocation, synchronization, saving and draining. Ordinary startup has no global register/activate/deployment-prepare ceremony. A document-save prepare is a different protocol and remains necessary where implemented.
 
-`--path` is required. The entry must be an ordinary single-link file within the canonical APP.
-Explicit non-secret JSON configuration may be outside the APP; it must also be
-an ordinary single-link file, and path-component symlinks are rejected. CLI passes configuration by path and never reads secret files.
-Plan is read-only and may report missing configuration references. Enable is
-CAS-protected **prepare only**, never deploy/build/pull/start. Use the APP's native
-start entry separately under its operational authorization. Status without
-`--probe` is `not_probed`, not a health claim; probe requests the APP's real signed
-readiness. Disable must reuse the original stable drain ID on an unknown outcome;
-CLI never manufactures IDs, automatically retries, force-stops or deletes volumes.
-`--preserve-desired` remains internal to the APP's stop/upgrade lifecycle.
+For an existing old APP that actually implements lifecycle.v1, the retained wrapper supports plan/enable/status/disable and requires explicit `--path`. It invokes that APP's ordinary single-link entry through Python with literal argv; it does not read secret files or call Node directly. Legacy enable performs its native preparation only; status without probe is not health. Disable keeps the original drain ID on unknown outcomes and requires the exact protocol-2 durable-drain and native-stop proof. Retaining compatibility commands does not authorize restarting a stopped environment.
 
-Native collaboration uses Hocuspocus 4.6.0 / Yjs 13.6.32 and room protocol 2.
-The public lifecycle envelope remains v1. A ready probe requires both
-`signed_runtime=ok` and `paired_native_runtime=ok`: the APP owner must verify
-fresh PHP and Node identities, configuration binding and the Node process holder.
-PHP schema readiness or the retired operator-v1 probe cannot establish this result.
-The CLI does not call Node control endpoints, read keys or implement activation.
-The APP's native start/activate owner opens admission only after that paired proof.
-
-A completed disable requires `native_room_drain=ok`, `durable_drain=ok` and
-`native_stop=ok`. Its public `drain` summary contains exactly `protocol: 2`,
-`drain_id`, `plan_sha256`, `targets_sha256`, `durably_drained: true` and nonnegative
-integer `room_count`; the ID must match the requested original ID. Per-room
-holder/epoch/capture proofs stay with the APP owner, without document payloads in
-the CLI result. A zero-room summary still requires a verified empty target set
-and native stop. The APP must bind UUID holder values in protocol-2 control
-headers, bodies and signature canonicalization. `CONTROL_HOLDER_CHANGED` is an
-unconfirmed original operation, never an offline drain or permission to create
-a replacement ID. The retired accepted/journal path is not a completion proof.
-
-Results use only `peanut.collaboration.lifecycle.v1`, with full field/type/action
-and exit consistency checks. Exit 0 confirms the reported operation (not deployment
-or health without probe); 2 is input/CAS/safety rejection, 3 is missing configuration
-reference, and 4 is unknown/unconfirmed. A native rc0 unknown or failed readiness query
-retains its valid protocol response but is surfaced as CLI rc4: the query returned,
-readiness remains unconfirmed. Malformed/non-JSON, stderr diagnostics, unknown exits and protocol
-mismatches fail closed with a generic error; raw native/configuration diagnostics
-are never echoed. Synthetic orchestration tests do not prove real Docker, Node,
-MySQL, signed readiness or durable drain qualification.
+Strict keys/types/action/exit consistency, signed and paired readiness, holder binding, failure and unknown behavior remain enforced by the existing validator. A malformed response fails closed. Updating this adapter to the new native contract is a separate implementation task; no new service capability or runtime qualification is claimed here.

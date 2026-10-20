@@ -92,7 +92,7 @@ function* walk(root, prefix = '') {
 test('version and help work without an application checkout', () => {
     let result = spawnSync(process.execPath, [BIN, '--version'], { encoding: 'utf8' });
     assert.equal(result.status, 0);
-    assert.equal(result.stdout.trim(), 'Peanut CLI 0.3.0');
+    assert.equal(result.stdout.trim(), `Peanut CLI ${JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version}`);
     result = spawnSync(process.execPath, [BIN, '--help'], { encoding: 'utf8' });
     assert.equal(result.status, 0);
     assert.match(result.stdout, /recipe add github-ci/);
@@ -102,7 +102,7 @@ test('add installs exact recipe baseline without changing application identity',
     const { app } = createFixture(t);
     const original = fs.readFileSync(path.join(app, '.peanut/application-manifest.json'));
     const result = cli(app, ['recipe', 'add', 'github-ci']);
-    assert.equal(result.version, '1.0.0');
+    assert.equal(result.version, '1.0.1');
     const state = JSON.parse(fs.readFileSync(path.join(app, '.peanut/recipes/github-ci/manifest.json'), 'utf8'));
     assert.equal(state.protocol, 'peanut.recipe-installation.v1');
     for (const entry of state.manifest.files) {
@@ -142,7 +142,7 @@ test('later path conflict prevents partial install', (t) => {
 test('identical existing bytes do not grant recipe ownership', (t) => {
     const { app } = createFixture(t);
     fs.mkdirSync(path.dirname(workflow(app)), { recursive: true });
-    fs.copyFileSync(path.join(ROOT, 'recipes/github-ci/1.0.0/files/.github/workflows/ci.yml'), workflow(app));
+    fs.copyFileSync(path.join(ROOT, 'recipes/github-ci/1.0.1/files/.github/workflows/ci.yml'), workflow(app));
     assert.match(cli(app, ['recipe', 'add', 'github-ci'], 2), /RECIPE_PATH_CONFLICT/);
 });
 
@@ -202,14 +202,14 @@ test('invalid id, unknown recipe, and missing application fail closed', (t) => {
     assert.match(cli(app, ['status'], 2), /APPLICATION_MANIFEST_REQUIRED/);
 });
 
-test('doctor is read-only and catalog keeps 1.0.0 active', (t) => {
+test('doctor is read-only and catalog selects 1.0.1 for new installs', (t) => {
     const { app } = createFixture(t);
     const before = [...walk(app)].sort();
     const result = cli(app, ['doctor'], 1);
     assert.equal(result.status, 'incomplete');
     assert.equal(result.checks['server/composer.lock'], false);
     assert.equal(cli(app, ['status']).kind, 'application');
-    assert.deepEqual(cli(app, ['recipe', 'list']).available, { 'github-ci': '1.0.0' });
+    assert.deepEqual(cli(app, ['recipe', 'list']).available, { 'github-ci': '1.0.1' });
     assert.deepEqual([...walk(app)].sort(), before);
 });
 
@@ -218,9 +218,33 @@ test('corrupt bundle is rejected before application writes', (t) => {
     const tool = path.join(temp, 'tool');
     fs.mkdirSync(tool);
     fs.cpSync(path.join(ROOT, 'recipes'), path.join(tool, 'recipes'), { recursive: true });
-    fs.writeFileSync(path.join(tool, 'recipes/github-ci/1.0.0/files/.github/workflows/release.yml'), 'corrupt');
+    fs.writeFileSync(path.join(tool, 'recipes/github-ci/1.0.1/files/.github/workflows/release.yml'), 'corrupt');
     assert.throws(() => new RecipeManager(tool).add(app, 'github-ci'), /SOURCE_DIGEST_MISMATCH/);
     assert.equal(fs.existsSync(workflow(app)), false);
+});
+
+test('server-only recipe supplies explicit application root and immutable file digests', () => {
+    const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'recipes/github-ci/1.0.1/manifest.json'), 'utf8'));
+    for (const entry of manifest.files) assert.equal(sha256File(path.join(ROOT, 'recipes/github-ci/1.0.1/files', entry.path)), entry.sha256);
+    const release = fs.readFileSync(path.join(ROOT, 'recipes/github-ci/1.0.1/files/.github/workflows/release.yml'), 'utf8');
+    assert.match(release, /--application-root="\$GITHUB_WORKSPACE" --server-only/);
+    assert.match(release, /application-release\.tar\.gz\.manifest\.json/);
+    assert.doesNotMatch(release, /contents: write|git push|gh release create/);
+});
+
+test('new catalog does not upgrade or rewrite an installed 1.0.0 baseline', (t) => {
+    const { temp, app } = createFixture(t);
+    const tool = path.join(temp, 'old-tool'); fs.mkdirSync(tool);
+    fs.cpSync(path.join(ROOT, 'recipes'), path.join(tool, 'recipes'), { recursive: true });
+    const catalog = path.join(tool, 'recipes/catalog.json');
+    fs.writeFileSync(catalog, JSON.stringify({ schema_version: 1, protocol: 'peanut.recipe-catalog.v1', recipes: { 'github-ci': '1.0.0' } }));
+    new RecipeManager(tool).add(app, 'github-ci');
+    const baseline = path.join(app, '.peanut/recipes/github-ci/source-manifest.json');
+    const before = fs.readFileSync(baseline);
+    const result = new RecipeManager(ROOT).add(app, 'github-ci');
+    assert.equal(result.version, '1.0.0');
+    assert.deepEqual(fs.readFileSync(baseline), before);
+    assert.equal(sha256File(workflow(app, 'release.yml')), sha256File(path.join(ROOT, 'recipes/github-ci/1.0.0/files/.github/workflows/release.yml')));
 });
 
 test('create stages both Editions from an explicit git source and records source identity', (t) => {
