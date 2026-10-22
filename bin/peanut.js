@@ -25,7 +25,7 @@ function usage() {
         + '       peanut release [--path <scaffold>] [--version <semver>] [--source-commit <full-sha>] [--workflow none|runtime|full] [--output <absolute-new-directory>]\n'
         + '       peanut package [--path <application>] [--output <absolute-new-directory>]\n'
         + '       peanut upgrade [--check|--plan] [--ref <version-or-tag>] [--channel stable|prerelease] [--confirm-major-upgrade] [--path <application>]\n'
-        + '       peanut upgrade [--check|--plan] --archive <absolute-template.tgz> --manifest <absolute-template.json> [--baseline-mode-manifest <exact-old-release.json>] [--path <application>]\n'
+        + '       peanut upgrade [--check|--plan] --archive <absolute-template.tgz> --manifest <absolute-template.json> [--source-checkout <absolute-official-source>] [--baseline-mode-manifest <exact-old-release.json>] [--path <application>]\n'
         + '       peanut upgrade --apply-plan <plan> [--confirm-plan-sha256 <digest> --preserve-paths <paths|-> --replace-paths <paths|->] [--confirm-major-upgrade] [--path <application>]\n'
         + '       peanut upgrade --recover-plan <plan> [--path <application>]\n'
         + '       peanut service collaboration plan|enable|status|disable --path <application> [--configuration <non-secret-json>] [--expected-revision <n>] [--probe] [--drain-id <original-id>]\n'
@@ -131,6 +131,7 @@ function parseUpgradeArguments(raw) {
         ['--recover-plan', 'recoverPlan'], ['--confirm-plan-sha256', 'confirmPlanSha256'],
         ['--preserve-paths', 'preservePaths'], ['--replace-paths', 'replacePaths'],
         ['--archive', 'archive'], ['--manifest', 'manifest'], ['--baseline-mode-manifest', 'baselineModeManifest'],
+        ['--source-checkout', 'sourceCheckout'],
         ['--check', 'check'], ['--plan', 'plan'], ['--confirm-major-upgrade', 'confirmMajorUpgrade'],
     ]);
     for (let index = 0; index < raw.length; index += 1) {
@@ -149,7 +150,8 @@ function parseUpgradeArguments(raw) {
         }
     }
     if ([values.check, values.plan, values.applyPlan, values.recoverPlan].filter(Boolean).length > 1
-        || ((values.applyPlan || values.recoverPlan) && (values.ref || values.channel || values.archive || values.manifest || values.baselineModeManifest))
+        || ((values.applyPlan || values.recoverPlan) && (values.ref || values.channel || values.archive || values.manifest || values.baselineModeManifest || values.sourceCheckout))
+        || (values.sourceCheckout && (!values.archive || !values.manifest || values.ref || values.channel))
         || ((values.confirmPlanSha256 || values.preservePaths || values.replacePaths) && !values.applyPlan)) {
         throw new Error('PEANUT_UPGRADE_ARGUMENTS_INVALID');
     }

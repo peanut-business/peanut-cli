@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { fixture, archive, officialFixture } from './helpers/template-fixture.js';
@@ -98,6 +99,106 @@ test('tooling is separately sealed, excluded from creation, and rejects corrupt 
     const tampered = members.filter(([name]) => name !== 'tooling/vendor/extra.php').map(([name, content, mode]) => [name, name === 'tooling/vendor/autoload.php' ? Buffer.from('changed') : content, mode]);
     const changed = archive(tampered);
     assert.throws(() => validateTemplatePackage({ ...metadata, archive: { ...metadata.archive, bytes: changed.length, sha256: sha256(changed) } }, changed, 'standalone'), /TOOLING_FILE_CHANGED/);
+});
+
+async function developmentFixture(t) {
+    const checkout = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'peanut-development-source-'));
+    t.after(() => fs.rmSync(checkout, { recursive: true, force: true }));
+    const git = (...args) => {
+        const result = spawnSync('git', ['-c', 'user.name=CLI fixture', '-c', 'user.email=fixture@example.invalid',
+            '-c', 'commit.gpgSign=false', '-c', 'core.hooksPath=/dev/null', '-C', checkout, ...args], { encoding: 'utf8' });
+        assert.equal(result.status, 0, result.stderr);
+        return result.stdout.trim();
+    };
+    git('init', '--quiet');
+    git('remote', 'add', 'origin', 'https://github.com/peanut-business/peanut-admin-code.git');
+    fs.mkdirSync(path.join(checkout, 'scaffold'));
+    const profiles = Buffer.from('{"protocol":"peanut.edition-profiles.v1"}\n');
+    fs.writeFileSync(path.join(checkout, 'scaffold/edition-profiles.json'), profiles);
+    const commit = (revision) => {
+        const inventory = Buffer.from(JSON.stringify({ revision }) + '\n');
+        fs.writeFileSync(path.join(checkout, 'scaffold/application-template-inventory.json'), inventory);
+        git('add', '--', 'scaffold');
+        git('commit', '--quiet', '-m', 'fixed development source ' + revision);
+        return { commit: git('rev-parse', 'HEAD'), tree: git('rev-parse', 'HEAD^{tree}'),
+            inventory_sha256: sha256(inventory), edition_profile_sha256: sha256(profiles) };
+    };
+    const base = commit(1), target = commit(2);
+    const f = fixture(t, ({ app, release, create }) => {
+        Object.assign(app.generation_source, target, { requested_ref: target.commit });
+        Object.assign(app.template, { source_commit: target.commit, source_tree: target.tree, inventory_sha256: target.inventory_sha256 });
+        app.edition.source_sha256 = target.edition_profile_sha256;
+        Object.assign(release.release, { source_commit: target.commit, source_tree: target.tree, inventory_sha256: target.inventory_sha256 });
+        create.scaffold_manifest_sha256 = sha256(Buffer.from(JSON.stringify(release, null, 4) + '\n'));
+    });
+    await createProject(f.options, offline);
+    const manifestPath = path.join(f.options.target, '.peanut/application-manifest.json');
+    const current = JSON.parse(fs.readFileSync(manifestPath));
+    const useBase = (application, source) => {
+        Object.assign(application.generation_source, source, { requested_ref: 'local:' + '1'.repeat(64) });
+        Object.assign(application.template, { source_commit: source.commit, source_tree: source.tree, inventory_sha256: source.inventory_sha256 });
+        application.edition.source_sha256 = source.edition_profile_sha256;
+        return application;
+    };
+    useBase(current, base);
+    fs.writeFileSync(manifestPath, JSON.stringify(current));
+    return { ...f, checkout, git, commit, base, target, current, useBase, manifestPath,
+        upgrade: { path: f.options.target, archive: f.options.archive, manifest: f.options.manifest, sourceCheckout: checkout } };
+}
+
+test('development successor requires explicit fixed ancestry and checks remain read-only', async (t) => {
+    const f = await developmentFixture(t);
+    const before = fs.readFileSync(f.manifestPath);
+    const result = await upgradeProject({ ...f.upgrade, check: true }, offline);
+    assert.equal(result.status, 'available');
+    assert.equal(result.source_relation.kind, 'development_successor');
+    assert.equal(result.source_relation.base.commit, f.base.commit);
+    assert.equal(result.source_relation.target.commit, f.target.commit);
+    const { sourceCheckout, ...withoutProof } = f.upgrade;
+    const missing = await upgradeProject({ ...withoutProof, check: true }, offline);
+    assert.equal(missing.status, 'source_identity_unknown');
+    assert.equal(missing.source_relation.reason, 'development_source_checkout_required');
+    assert.deepEqual(fs.readFileSync(f.manifestPath), before);
+    assert.equal(fs.existsSync(path.join(f.options.target, '.peanut/upgrades')), false);
+});
+
+test('development successor rejects unknown identity, foreign origin and non-ancestor history', async (t) => {
+    const f = await developmentFixture(t);
+    const check = (application = f.current) => discoverUpgrade(application, f.upgrade, offline);
+    for (const change of [
+        (app) => { app.template.source_commit = 'e'.repeat(40); },
+        (app) => { app.application.profile = 'standard'; },
+        (app) => { app.generation_source.tree = app.template.source_tree = 'f'.repeat(40); },
+        (app) => { app.generation_source.inventory_sha256 = app.template.inventory_sha256 = 'f'.repeat(64); },
+    ]) {
+        const application = structuredClone(f.current); change(application);
+        assert.equal((await check(application)).status, 'source_identity_unknown');
+    }
+    f.git('remote', 'set-url', 'origin', 'https://example.invalid/foreign.git');
+    assert.equal((await check()).status, 'source_identity_unknown');
+    f.git('remote', 'set-url', 'origin', 'https://github.com/peanut-business/peanut-admin-code.git');
+    const newer = f.commit(3);
+    assert.equal((await check(f.useBase(structuredClone(f.current), newer))).status, 'source_ahead');
+    f.git('checkout', '--quiet', '--detach', f.base.commit);
+    const sibling = f.commit(4);
+    assert.equal((await check(f.useBase(structuredClone(f.current), sibling))).status, 'source_diverged');
+    fs.writeFileSync(path.join(f.checkout, '.git/info/grafts'), f.target.commit + '\n');
+    assert.equal((await check()).source_relation.reason, 'development_repository_invalid');
+    assert.equal(fs.existsSync(path.join(f.options.target, '.peanut/upgrades')), false);
+});
+
+test('development successor does not admit equal-version official source changes or mixed arguments', async (t) => {
+    const f = await developmentFixture(t);
+    const official = structuredClone(f.current);
+    Object.assign(official.generation_source, { channel: 'stable', requested_ref: 'v5.0.2', release_version: '5.0.2' });
+    assert.equal((await discoverUpgrade(official, f.upgrade, offline)).status, 'source_identity_mismatch');
+    await assert.rejects(discoverUpgrade(f.current, { ref: 'v5.0.2', sourceCheckout: f.checkout }, offline), /DEVELOPMENT_SOURCE_ARGUMENTS_INVALID/);
+    const bin = fileURLToPath(new URL('../bin/peanut.js', import.meta.url));
+    for (const args of [['--source-checkout', f.checkout], ['--apply-plan', 'x', '--source-checkout', f.checkout]]) {
+        const result = spawnSync(process.execPath, [bin, 'upgrade', ...args], { encoding: 'utf8' });
+        assert.equal(result.status, 2);
+        assert.match(result.stderr, /ARGUMENTS_INVALID/);
+    }
 });
 
 test('saved plans reject outside state and parser rejects mixed selections and retired prepare', async (t) => {
