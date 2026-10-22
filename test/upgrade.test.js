@@ -193,6 +193,17 @@ test('development successor rejects unknown identity, foreign origin and non-anc
     assert.equal((await check(f.useBase(structuredClone(f.current), sibling))).status, 'source_diverged');
     fs.writeFileSync(path.join(f.checkout, '.git/info/grafts'), f.target.commit + '\n');
     assert.equal((await check()).source_relation.reason, 'development_repository_invalid');
+    fs.unlinkSync(path.join(f.checkout, '.git/info/grafts'));
+    const customGraft = path.join(f.checkout, 'injected-graft');
+    fs.writeFileSync(customGraft, f.target.commit + ' ' + sibling.commit + '\n');
+    const previousGraft = process.env.GIT_GRAFT_FILE;
+    process.env.GIT_GRAFT_FILE = customGraft;
+    try {
+        assert.equal((await check(f.useBase(structuredClone(f.current), sibling))).status, 'source_diverged');
+    } finally {
+        if (previousGraft === undefined) delete process.env.GIT_GRAFT_FILE;
+        else process.env.GIT_GRAFT_FILE = previousGraft;
+    }
     assert.equal(fs.existsSync(path.join(f.options.target, '.peanut/upgrades')), false);
 });
 
