@@ -146,10 +146,11 @@ async function developmentFixture(t) {
         upgrade: { path: f.options.target, archive: f.options.archive, manifest: f.options.manifest, sourceCheckout: checkout } };
 }
 
-// CLI protocol consumer only; native Git/projection/apply semantics have their own fixed evidence.
-async function developmentBindingFixture(t, variant = '') {
+// Fixed bc9e five-field public context; native baseline/Git membership proof is separately reviewed.
+async function developmentBindingFixture(t, variant = '', workflowPresent = true) {
     const f = await developmentFixture(t);
     f.current.application.profile = 'standard';
+    if (!workflowPresent) delete f.current.application.workflow;
     fs.writeFileSync(f.manifestPath, JSON.stringify(f.current));
     const engine = Buffer.from(`<?php
 $variant = ${JSON.stringify(variant)};
@@ -167,7 +168,11 @@ if ($command === 'template-plan') {
         'identity' => ['from' => $release($base), 'to' => $release($target),
             'source_selection' => ['source_checkout' => $options['source-checkout'] ?? null],
             'source_relation' => ['kind' => 'development_successor', 'repository' => 'peanut-business/peanut-admin-code', 'base' => $base, 'target' => $target],
-            'development_source' => ['profile' => $app['application']['profile'], 'workflow' => $app['application']['workflow'], 'excluded_paths_sha256' => hash('sha256', '[]')]],
+            'development_source' => ['profile' => $app['application']['profile'],
+                'workflow' => array_key_exists('workflow', $app['application']) ? $app['application']['workflow'] : $metadata['workflow'],
+                'workflow_present' => array_key_exists('workflow', $app['application']),
+                'workflow_paths_sha256' => array_key_exists('workflow', $app['application']) ? null : hash('sha256', '[]'),
+                'excluded_paths_sha256' => hash('sha256', '[]')]],
         'manifest_paths' => ['to' => $options['template-manifest']]];
     if ($variant === 'missing') unset($plan['identity']['source_relation']);
     if ($variant === 'relation') $plan['identity']['source_relation']['base']['commit'] = str_repeat('f', 40);
@@ -175,9 +180,15 @@ if ($command === 'template-plan') {
     if ($variant === 'profile') $plan['identity']['development_source']['profile'] = 'full';
     if ($variant === 'workflow') $plan['identity']['development_source']['workflow'] = 'none';
     if ($variant === 'digest') $plan['identity']['development_source']['excluded_paths_sha256'] = 'invalid';
+    if ($variant === 'presence') $plan['identity']['development_source']['workflow_present'] = !array_key_exists('workflow', $app['application']);
+    if ($variant === 'presence-type') $plan['identity']['development_source']['workflow_present'] = 1;
+    if ($variant === 'paths') $plan['identity']['development_source']['workflow_paths_sha256'] = 'invalid';
+    if ($variant === 'old-schema') { unset($plan['identity']['development_source']['workflow_present'], $plan['identity']['development_source']['workflow_paths_sha256']); }
 } elseif ($command === 'resolve') {
     $plan = json_decode(file_get_contents($options['plan']), true);
     $plan['status'] = 'ready'; $plan['actions'] = [['conflict' => false]];
+    if ($variant === 'resolve-presence') $plan['identity']['development_source']['workflow_present'] = !$plan['identity']['development_source']['workflow_present'];
+    if ($variant === 'resolve-paths') $plan['identity']['development_source']['workflow_paths_sha256'] = str_repeat('f', 64);
 } else { echo json_encode(['status' => $command === 'verify' ? 'verified' : $command]); exit(0); }
 $plan['plan_sha256'] = 'sha256:' . hash('sha256', json_encode([$plan['identity'], $plan['actions']]));
 $plan['plan_path'] = '.peanut/upgrades/plans/' . $plan['status'] . '.json';
@@ -216,38 +227,58 @@ exit($plan['status'] === 'blocked' ? 2 : 0);
 }
 
 test('native development binding forwards checkout and retains proof through saved consumers', async (t) => {
-    const f = await developmentBindingFixture(t);
-    const before = fs.readFileSync(f.manifestPath);
-    const planned = await upgradeProject({ ...f.upgrade, plan: true }, offline);
-    assert.equal(planned.status, 'blocked');
-    const bindingDirectory = path.join(f.options.target, '.peanut/upgrades/engine-bindings');
-    const bindingFile = path.join(bindingDirectory, fs.readdirSync(bindingDirectory)[0]);
-    const binding = JSON.parse(fs.readFileSync(bindingFile));
-    assert.equal(binding.source_checkout, fs.realpathSync(f.checkout));
-    assert.deepEqual(binding.development_source, planned.plan.identity.development_source);
-    assert.equal(binding.development_source.profile, 'standard');
-    const applied = await upgradeProject({ path: f.options.target, applyPlan: planned.plan_path,
-        confirmPlanSha256: planned.plan.plan_sha256, preservePaths: 'README.md', replacePaths: '-' }, offline);
-    assert.equal(applied.status, 'verified');
-    const resolvedBinding = fs.readdirSync(bindingDirectory).map(name => JSON.parse(fs.readFileSync(path.join(bindingDirectory, name)))).find(value => value.plan_path.endsWith('/ready.json'));
-    assert.deepEqual(resolvedBinding.development_source, binding.development_source);
-    assert.equal(resolvedBinding.source_checkout, binding.source_checkout);
-    await upgradeProject({ path: f.options.target, recoverPlan: applied.plan_path }, offline);
-    const calls = fs.readFileSync(path.join(f.options.target, 'consumer-calls.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
-    assert.deepEqual(calls.map(([command]) => command), ['template-plan', 'resolve', 'apply', 'verify', 'recover']);
-    assert.equal(calls[0][1]['source-checkout'], f.checkout);
-    assert.deepEqual(fs.readFileSync(f.manifestPath), before);
-    binding.development_source.excluded_paths_sha256 = 'e'.repeat(64);
-    fs.writeFileSync(bindingFile, JSON.stringify(binding));
-    await assert.rejects(upgradeProject({ path: f.options.target, applyPlan: planned.plan_path }, offline), /PLAN_DEVELOPMENT_SOURCE_MISMATCH/);
-    assert.equal(fs.readFileSync(path.join(f.options.target, 'consumer-calls.jsonl'), 'utf8').trim().split('\n').length, 5);
+    for (const workflowPresent of [true, false]) {
+        const f = await developmentBindingFixture(t, '', workflowPresent);
+        const before = fs.readFileSync(f.manifestPath);
+        const planned = await upgradeProject({ ...f.upgrade, plan: true }, offline);
+        assert.equal(planned.status, 'blocked');
+        const bindingDirectory = path.join(f.options.target, '.peanut/upgrades/engine-bindings');
+        const bindingFile = path.join(bindingDirectory, fs.readdirSync(bindingDirectory)[0]);
+        const binding = JSON.parse(fs.readFileSync(bindingFile));
+        assert.equal(binding.source_checkout, fs.realpathSync(f.checkout));
+        assert.deepEqual(binding.development_source, planned.plan.identity.development_source);
+        assert.equal(binding.development_source.profile, 'standard');
+        assert.equal(binding.development_source.workflow, 'runtime');
+        assert.equal(binding.development_source.workflow_present, workflowPresent);
+        assert.equal(binding.development_source.workflow_paths_sha256, workflowPresent ? null : sha256('[]'));
+        const applied = await upgradeProject({ path: f.options.target, applyPlan: planned.plan_path,
+            confirmPlanSha256: planned.plan.plan_sha256, preservePaths: 'README.md', replacePaths: '-' }, offline);
+        assert.equal(applied.status, 'verified');
+        const resolvedBinding = fs.readdirSync(bindingDirectory).map(name => JSON.parse(fs.readFileSync(path.join(bindingDirectory, name)))).find(value => value.plan_path.endsWith('/ready.json'));
+        assert.deepEqual(resolvedBinding.development_source, binding.development_source);
+        assert.equal(resolvedBinding.source_checkout, binding.source_checkout);
+        await upgradeProject({ path: f.options.target, recoverPlan: applied.plan_path }, offline);
+        const calls = fs.readFileSync(path.join(f.options.target, 'consumer-calls.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+        assert.deepEqual(calls.map(([command]) => command), ['template-plan', 'resolve', 'apply', 'verify', 'recover']);
+        assert.equal(calls[0][1]['source-checkout'], f.checkout);
+        assert.deepEqual(fs.readFileSync(f.manifestPath), before);
+        for (const [key, value] of [['profile', 'full'], ['workflow', 'full'], ['workflow_present', !workflowPresent],
+            ['workflow_paths_sha256', 'e'.repeat(64)], ['excluded_paths_sha256', 'e'.repeat(64)]]) {
+            const changed = structuredClone(binding); changed.development_source[key] = value;
+            fs.writeFileSync(bindingFile, JSON.stringify(changed));
+            for (const action of ['applyPlan', 'recoverPlan']) {
+                await assert.rejects(upgradeProject({ path: f.options.target, [action]: planned.plan_path }, offline), /PLAN_DEVELOPMENT_SOURCE_MISMATCH/);
+            }
+        }
+        assert.equal(fs.readFileSync(path.join(f.options.target, 'consumer-calls.jsonl'), 'utf8').trim().split('\n').length, 5);
+    }
 });
 
 test('native development binding rejects missing or mismatched native proof before saving', async (t) => {
-    for (const variant of ['missing', 'relation', 'checkout', 'profile', 'workflow', 'digest']) {
-        const f = await developmentBindingFixture(t, variant);
-        await assert.rejects(upgradeProject({ ...f.upgrade, plan: true }, offline), /PLAN_DEVELOPMENT_SOURCE_MISMATCH/);
-        assert.equal(fs.existsSync(path.join(f.options.target, '.peanut/upgrades/engine-bindings')), false);
+    for (const workflowPresent of [true, false]) {
+        for (const variant of ['missing', 'relation', 'checkout', 'profile', 'workflow', 'digest', 'presence', 'presence-type', 'paths', 'old-schema']) {
+            const f = await developmentBindingFixture(t, variant, workflowPresent);
+            await assert.rejects(upgradeProject({ ...f.upgrade, plan: true }, offline), /PLAN_DEVELOPMENT_SOURCE_MISMATCH/);
+            assert.equal(fs.existsSync(path.join(f.options.target, '.peanut/upgrades/engine-bindings')), false);
+        }
+        for (const variant of ['resolve-presence', 'resolve-paths']) {
+            const f = await developmentBindingFixture(t, variant, workflowPresent);
+            const planned = await upgradeProject({ ...f.upgrade, plan: true }, offline);
+            await assert.rejects(upgradeProject({ path: f.options.target, applyPlan: planned.plan_path,
+                confirmPlanSha256: planned.plan.plan_sha256, preservePaths: 'README.md', replacePaths: '-' }, offline), /PLAN_DEVELOPMENT_SOURCE_MISMATCH/);
+            const calls = fs.readFileSync(path.join(f.options.target, 'consumer-calls.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+            assert.deepEqual(calls.map(([command]) => command), ['template-plan', 'resolve']);
+        }
     }
 });
 
