@@ -4,13 +4,37 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { fixture, archive } from './helpers/template-fixture.js';
+import { fixture, archive, officialFixture } from './helpers/template-fixture.js';
 import { createProject } from '../lib/create-project.js';
 import { discoverUpgrade, upgradeProject } from '../lib/upgrade-project.js';
 import { readTemplateArchive, validateTemplatePackage } from '../lib/template-package.js';
 import { sha256 } from '../lib/protocol.js';
 
 const offline = () => { throw new Error('unexpected network access'); };
+
+test('official upgrade shares release binding and refuses drift before cache or plan writes', async (t) => {
+    for (const rejected of [false, true]) {
+        const f = officialFixture(t);
+        await createProject({ ...f.options, archive: path.join(f.root, 'template.tgz'), manifest: path.join(f.root, 'template.json') }, offline);
+        const manifestPath = path.join(f.options.target, '.peanut/application-manifest.json');
+        const application = JSON.parse(fs.readFileSync(manifestPath));
+        application.template.version = '5.0.1';
+        fs.writeFileSync(manifestPath, JSON.stringify(application));
+        const before = fs.readFileSync(manifestPath);
+        const options = { path: f.options.target, ref: 'v5.0.2', ...(rejected ? { plan: true } : { check: true }) };
+        if (rejected) { f.lock.candidate.tree = 'e'.repeat(40); f.seal(); }
+        if (rejected) await assert.rejects(upgradeProject(options, f.fetcher), /PEANUT_RELEASE_IDENTITY_INVALID/);
+        else {
+            const result = await upgradeProject(options, f.fetcher);
+            assert.equal(result.status, 'available');
+            assert.equal(result.metadata.source.tree, f.lock.candidate.tree);
+        }
+        assert.deepEqual(fs.readFileSync(manifestPath), before);
+        assert.equal(fs.existsSync(path.join(f.options.target, '.peanut/upgrades')), false);
+        assert.equal(f.calls.filter(url => url.includes('/tags/v5.0.2')).length, 1);
+        assert.equal(f.calls.some(url => url.includes('/latest')), false);
+    }
+});
 async function appFixture(t) {
     const f = fixture(t);
     await createProject(f.options, offline);

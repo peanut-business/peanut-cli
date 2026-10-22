@@ -7,9 +7,87 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { RecipeManager } from '../lib/recipe-manager.js';
 import { sha256File } from '../lib/protocol.js';
+import { createProject } from '../lib/create-project.js';
+import { officialFixture } from './helpers/template-fixture.js';
+import { validateTemplatePackage } from '../lib/template-package.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const BIN = path.join(ROOT, 'bin/peanut.js');
+
+test('official create binds both Editions to the selected release without re-resolving latest', async (t) => {
+    for (const edition of ['standalone', 'multi-tenant']) {
+        const f = officialFixture(t, { edition });
+        const result = await createProject(f.options, f.fetcher);
+        assert.equal(result.status, 'created');
+        assert.equal(result.application.edition, edition);
+        assert.equal(result.source.commit, f.lock.candidate.commit);
+        assert.equal(result.source.tree, f.lock.candidate.tree);
+        assert.equal(result.source.inventory_sha256, f.lock.inputs.application_template_inventory_sha256);
+        assert.equal(f.calls.filter((url) => url.includes('/releases/latest')).length, 1);
+        assert.equal(f.calls.filter((url) => url.includes('/releases/tags/')).length, 0);
+        assert.equal(f.calls.length, 5);
+    }
+});
+
+test('official create keeps explicit refs exact and prerelease discovery bound once', async (t) => {
+    for (const ref of [undefined, 'v5.0.2-rc.1']) {
+        const f = officialFixture(t, { version: '5.0.2-rc.1' });
+        await createProject({ ...f.options, channel: 'prerelease', ...(ref ? { ref } : {}) }, f.fetcher);
+        const discovery = f.calls.filter((url) => url.startsWith('https://api.github.com/'));
+        assert.equal(discovery.length, 1);
+        assert.match(discovery[0], ref ? /\/tags\/v5\.0\.2-rc\.1$/ : /\?per_page=100$/);
+    }
+    const f = officialFixture(t);
+    const calls = [];
+    await assert.rejects(createProject({ ...f.options, ref: 'v5.0.1' }, async (url) => {
+        calls.push(url); return { ok: true, json: async () => f.release };
+    }), /PEANUT_CREATE_RELEASE_IDENTITY_INVALID/);
+    assert.match(calls[0], /\/tags\/v5\.0\.1$/);
+    assert.equal(calls.length, 1);
+    assert.equal(fs.existsSync(f.options.target), false);
+});
+
+test('official create rejects missing or inconsistent release bindings before materialization', async (t) => {
+    const mutations = {
+        'missing lock asset': [f => { f.release.assets = f.release.assets.filter(a => a.name !== 'RELEASE_CANDIDATE_LOCK.json'); }, /PEANUT_RELEASE_ASSET_INVALID/],
+        'duplicate manifest asset': [f => f.release.assets.push(f.release.assets.find(a => a.name === 'RELEASE_MANIFEST.json')), /PEANUT_RELEASE_ASSET_INVALID/],
+        'foreign lock URL': [f => { f.release.assets.find(a => a.name === 'RELEASE_CANDIDATE_LOCK.json').browser_download_url = 'https://foreign.invalid/lock'; }, /PEANUT_RELEASE_ASSET_INVALID/],
+        'changed lock bytes': [f => f.bytes.set('RELEASE_CANDIDATE_LOCK.json', Buffer.from('{}')), /PEANUT_RELEASE_IDENTITY_INVALID/],
+        'wrong lock SHA': [f => { f.manifest.candidate_lock.sha256 = 'f'.repeat(64); f.bytes.set('RELEASE_MANIFEST.json', Buffer.from(JSON.stringify(f.manifest))); }, /PEANUT_RELEASE_IDENTITY_INVALID/],
+        'version': [f => { f.manifest.version = '5.0.3'; f.seal(); }, /PEANUT_RELEASE_IDENTITY_INVALID/],
+        'tag': [f => { f.lock.tag = 'v5.0.3'; f.seal(); }, /PEANUT_RELEASE_IDENTITY_INVALID/],
+        'repository': [f => { f.manifest.repository = 'https://github.com/foreign/project'; f.seal(); }, /PEANUT_RELEASE_IDENTITY_INVALID/],
+        'source commit': [f => { f.lock.candidate.commit = 'e'.repeat(40); f.seal(); }, /PEANUT_RELEASE_IDENTITY_INVALID/],
+        'source tree': [f => { f.lock.candidate.tree = 'e'.repeat(40); f.seal(); }, /PEANUT_RELEASE_IDENTITY_INVALID/],
+        'inventory': [f => { f.lock.inputs.application_template_inventory_sha256 = 'e'.repeat(64); f.seal(); }, /PEANUT_RELEASE_IDENTITY_INVALID/],
+        'template lock': [f => { f.lock.template_artifacts.version = '5.0.3'; f.seal(); }, /PEANUT_RELEASE_IDENTITY_INVALID/],
+        'JSON bytes': [f => f.bytes.set('peanut-scaffold-standalone.json', Buffer.concat([f.bytes.get('peanut-scaffold-standalone.json'), Buffer.from(' ')])), /PEANUT_RELEASE_ASSET_BINDING_INVALID/],
+        'tgz bytes': [f => f.bytes.set('peanut-scaffold-standalone.tgz', Buffer.from('changed archive')), /PEANUT_RELEASE_ASSET_BINDING_INVALID/],
+        'JSON asset digest': [f => { f.manifest.artifacts['peanut-scaffold-standalone.json'] = { ...f.manifest.artifacts['peanut-scaffold-standalone.json'], sha256: 'e'.repeat(64) }; f.seal(); }, /PEANUT_RELEASE_ASSET_BINDING_INVALID/],
+    };
+    for (const [name, [mutate, error]] of Object.entries(mutations)) {
+        await t.test(name, async (t) => {
+            const f = officialFixture(t);
+            const before = fs.readdirSync(f.root);
+            mutate(f);
+            await assert.rejects(createProject(f.options, f.fetcher), error);
+            assert.deepEqual(fs.readdirSync(f.root), before);
+            assert.equal(fs.existsSync(f.options.target), false);
+        });
+    }
+});
+
+test('official create refuses an internally valid package pair from a different locked source', async (t) => {
+    const f = officialFixture(t);
+    const foreign = officialFixture(t, { sourceCommit: 'e'.repeat(40) });
+    const name = 'peanut-scaffold-standalone';
+    const archive = foreign.bytes.get(name + '.tgz');
+    // This pair passes the pre-existing internal/member/tooling contract.
+    assert.equal(validateTemplatePackage(foreign.metadata, archive, 'standalone').metadata.source.commit, 'e'.repeat(40));
+    for (const extension of ['json', 'tgz']) f.bytes.set(name + '.' + extension, foreign.bytes.get(name + '.' + extension));
+    await assert.rejects(createProject(f.options, f.fetcher), /PEANUT_RELEASE_IDENTITY_INVALID/);
+    assert.equal(fs.existsSync(f.options.target), false);
+});
 
 function releaseVersions() {
     const packages = {};
