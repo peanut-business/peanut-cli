@@ -116,7 +116,7 @@ async function developmentFixture(t) {
     const profiles = Buffer.from('{"protocol":"peanut.edition-profiles.v1"}\n');
     fs.writeFileSync(path.join(checkout, 'scaffold/edition-profiles.json'), profiles);
     const commit = (revision) => {
-        const inventory = Buffer.from(JSON.stringify({ revision }) + '\n');
+        const inventory = Buffer.from(JSON.stringify({ revision, files: [{ profiles: ['minimal', 'standard', 'full'] }] }) + '\n');
         fs.writeFileSync(path.join(checkout, 'scaffold/application-template-inventory.json'), inventory);
         git('add', '--', 'scaffold');
         git('commit', '--quiet', '-m', 'fixed development source ' + revision);
@@ -154,6 +154,15 @@ test('development successor requires explicit fixed ancestry and checks remain r
     assert.equal(result.source_relation.kind, 'development_successor');
     assert.equal(result.source_relation.base.commit, f.base.commit);
     assert.equal(result.source_relation.target.commit, f.target.commit);
+    const retainedIdentity = structuredClone(f.current);
+    retainedIdentity.application.profile = 'standard';
+    delete retainedIdentity.application.workflow;
+    const retained = await discoverUpgrade(retainedIdentity, f.upgrade, offline);
+    assert.equal(retained.status, 'available');
+    assert.equal(retained.source_relation.application_profile, 'standard');
+    assert.equal(retained.source_relation.template_profile, 'full');
+    assert.equal(retainedIdentity.application.profile, 'standard');
+    assert.equal(Object.hasOwn(retainedIdentity.application, 'workflow'), false);
     const { sourceCheckout, ...withoutProof } = f.upgrade;
     const missing = await upgradeProject({ ...withoutProof, check: true }, offline);
     assert.equal(missing.status, 'source_identity_unknown');
@@ -167,7 +176,7 @@ test('development successor rejects unknown identity, foreign origin and non-anc
     const check = (application = f.current) => discoverUpgrade(application, f.upgrade, offline);
     for (const change of [
         (app) => { app.template.source_commit = 'e'.repeat(40); },
-        (app) => { app.application.profile = 'standard'; },
+        (app) => { app.application.profile = 'unsupported-profile'; },
         (app) => { app.generation_source.tree = app.template.source_tree = 'f'.repeat(40); },
         (app) => { app.generation_source.inventory_sha256 = app.template.inventory_sha256 = 'f'.repeat(64); },
     ]) {
