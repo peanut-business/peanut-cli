@@ -13,6 +13,7 @@ peanut --version
 peanut create /absolute/new-app --name "Business App" --slug business-app --package example/business-app --edition standalone
 peanut create /absolute/new-app --name "Business App" --slug business-app --package example/business-app --edition standalone --archive /absolute/peanut-scaffold-standalone.tgz --manifest /absolute/peanut-scaffold-standalone.json
 peanut release --path /absolute/scaffold --output /absolute/new-release
+peanut release --path /absolute/scaffold --api-tool-root /absolute/fixed-source-tool-root --output /absolute/new-release
 peanut package --path /absolute/app --output /absolute/new-server-package
 peanut doctor [--path <application>]
 peanut status [--path <application>]
@@ -43,6 +44,8 @@ Creation validates package/file digests, fixed source, Edition, member uniquenes
 ### Explicit implementation boundary
 
 `release` delegates to the scaffold's native `scripts/build-scaffold-release`, once per Edition with a fixed source commit. `package` delegates to the APP's own `scripts/package-release.sh --server-only` and builds its declared clients; normal build dependencies must be prepared separately. Existing outputs are refused. Defaults use the source/APP parent's `release/scaffold/<version>/<build-id>` or `release/apps/<slug>/<version>/<build-id>`; explicit absolute `--output` supports CI. These commands do not publish or deploy. Recipes select the matching scaffold or APP repository contract before writing workflows. No force/recreate mode exists. Existing APPs use the fixed-plan upgrade path below.
+
+`release --api-tool-root` forwards an explicitly prepared source tool checkout to the same native producer for both Editions. This is useful when the scaffold checkout's installed web dependencies belong to a separate development session. The path must be absolute and contain the native API generator; the producer still requires its generator, web manifest/lock and toolchain declaration to match the fixed source and verifies the installed API tool identity and lock. It does not install dependencies or change the selected source commit. The option is specific to `release`; `package` refuses it.
 
 ## Development APP upstream upgrades
 
