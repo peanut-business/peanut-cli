@@ -13,26 +13,42 @@ concurrency:
 
 jobs:
   templates:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Read the committed producer tool requirements
+        id: requirements
+        shell: bash
+        run: |
+          python3 scripts/project-env requirements > "$RUNNER_TEMP/producer-tools.json"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          tools = json.loads((Path(os.environ['RUNNER_TEMP']) / 'producer-tools.json').read_text())
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as out:
+              for name in ('php', 'node', 'pnpm', 'python3', 'composer'):
+                  out.write(name + '=' + tools[name]['version'] + '\n')
+          PY
       - uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.3'
+          php-version: ${{ steps.requirements.outputs.php }}
           extensions: json, mbstring, pdo_mysql, sodium, dom, fileinfo, curl, zip
-          tools: composer:2.10.2
+          tools: composer:${{ steps.requirements.outputs.composer }}
           coverage: none
       - uses: pnpm/action-setup@v4
         with:
-          version: 9.15.6
+          version: ${{ steps.requirements.outputs.pnpm }}
           run_install: false
       - uses: actions/setup-node@v4
         with:
-          node-version: '22.23.2'
+          node-version: ${{ steps.requirements.outputs.node }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ steps.requirements.outputs.python3 }}
       - name: Prepare the committed producer dependencies
         run: |
           composer --working-dir=server install --no-dev --no-plugins --no-scripts --no-interaction --no-progress --prefer-dist
@@ -44,10 +60,16 @@ jobs:
           test ! -e .peanut/application-manifest.json
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           version="$(node -p "JSON.parse(require('node:fs').readFileSync('release-versions.json','utf8')).scaffold_template")"
-          for edition in standalone multi-tenant; do
-            php scripts/build-scaffold-release --version="$version" --source-commit="$GITHUB_SHA" \
-              --edition="$edition" --workflow=runtime --output="$RUNNER_TEMP/scaffold-templates/$edition"
+          for build in scaffold-templates scaffold-rebuild; do
+            for edition in standalone multi-tenant; do
+              php scripts/build-scaffold-release --version="$version" --source-commit="$GITHUB_SHA" \
+                --edition="$edition" --workflow=runtime --output="$RUNNER_TEMP/$build/$edition"
+            done
           done
+          node scripts/release-template-artifacts.mjs compare "$RUNNER_TEMP/scaffold-templates" "$version" \
+            "$GITHUB_SHA" "$(git rev-parse HEAD^{tree})" \
+            "$(sha256sum scaffold/application-template-inventory.json | cut -d ' ' -f1)" \
+            "$RUNNER_TEMP/scaffold-rebuild" > "$RUNNER_TEMP/rebuild-comparison.json"
       - uses: actions/upload-artifact@v4
         with:
           name: scaffold-templates-${{ github.sha }}
@@ -56,5 +78,14 @@ jobs:
             ${{ runner.temp }}/scaffold-templates/standalone/peanut-scaffold-standalone.json
             ${{ runner.temp }}/scaffold-templates/multi-tenant/peanut-scaffold-multi-tenant.tgz
             ${{ runner.temp }}/scaffold-templates/multi-tenant/peanut-scaffold-multi-tenant.json
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: scaffold-production-inputs-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/scaffold-templates/standalone/scaffold-build-inputs.json
+            ${{ runner.temp }}/scaffold-templates/multi-tenant/scaffold-build-inputs.json
+            ${{ runner.temp }}/rebuild-comparison.json
           if-no-files-found: error
           retention-days: 7

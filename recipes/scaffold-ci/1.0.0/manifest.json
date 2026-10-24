@@ -10,7 +10,7 @@
             "classification": "managed",
             "owner": "recipe:scaffold-ci",
             "mode": 420,
-            "sha256": "5dd641283764c251fff9f58911363352db077c64ef9251c79759645c4df13cd3"
+            "sha256": "6a4dd323e7d4f896f16475463e17ba62c278cc1d9f3a1b650b53c57be033258b"
         }
     ]
 }
