@@ -33,29 +33,20 @@ jobs:
               for name in ('php', 'node', 'pnpm', 'python3', 'composer'):
                   out.write(name + '=' + tools[name]['version'] + '\n')
           PY
-      - uses: shivammathur/setup-php@v2
-        with:
-          php-version: ${{ steps.requirements.outputs.php }}
-          extensions: json, mbstring, pdo_mysql, sodium, dom, fileinfo, curl, zip
-          tools: composer:${{ steps.requirements.outputs.composer }}
-          coverage: none
-      - uses: pnpm/action-setup@v4
-        with:
-          version: ${{ steps.requirements.outputs.pnpm }}
-          run_install: false
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ steps.requirements.outputs.node }}
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ steps.requirements.outputs.python3 }}
+      - name: Prepare the fixed official producer tool image
+        run: |
+          scripts/ci-producer prepare "$RUNNER_TEMP/ci-producer"
+          cp "$RUNNER_TEMP/ci-producer/identity.json" "$RUNNER_TEMP/producer-tools-actual.json"
       - name: Prepare the committed producer dependencies
         run: |
+          scripts/ci-producer exec "$RUNNER_TEMP/ci-producer" -- bash -Eeuo pipefail <<'PRODUCER'
           composer --working-dir=server install --no-dev --no-plugins --no-scripts --no-interaction --no-progress --prefer-dist
           pnpm --dir web install --frozen-lockfile --ignore-scripts --package-import-method=copy
+          PRODUCER
       - name: Build both Editions with the local native contract
         shell: bash
         run: |
+          scripts/ci-producer exec "$RUNNER_TEMP/ci-producer" -- bash -Eeuo pipefail <<'PRODUCER'
           set -Eeuo pipefail
           test ! -e .peanut/application-manifest.json
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
@@ -70,6 +61,7 @@ jobs:
             "$GITHUB_SHA" "$(git rev-parse HEAD^{tree})" \
             "$(sha256sum scaffold/application-template-inventory.json | cut -d ' ' -f1)" \
             "$RUNNER_TEMP/scaffold-rebuild" > "$RUNNER_TEMP/rebuild-comparison.json"
+          PRODUCER
       - uses: actions/upload-artifact@v4
         with:
           name: scaffold-templates-${{ github.sha }}
@@ -87,5 +79,6 @@ jobs:
             ${{ runner.temp }}/scaffold-templates/standalone/scaffold-build-inputs.json
             ${{ runner.temp }}/scaffold-templates/multi-tenant/scaffold-build-inputs.json
             ${{ runner.temp }}/rebuild-comparison.json
+            ${{ runner.temp }}/producer-tools-actual.json
           if-no-files-found: error
           retention-days: 7
