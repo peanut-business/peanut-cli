@@ -52,7 +52,7 @@ jobs:
       - name: Prepare the committed producer dependencies
         run: |
           composer --working-dir=server install --no-dev --no-plugins --no-scripts --no-interaction --no-progress --prefer-dist
-          pnpm --dir web install --frozen-lockfile --ignore-scripts
+          pnpm --dir web install --frozen-lockfile --ignore-scripts --package-import-method=copy
       - name: Build both Editions with the local native contract
         shell: bash
         run: |
