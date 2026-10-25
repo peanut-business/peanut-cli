@@ -12,17 +12,72 @@ import { createProject } from '../lib/create-project.js';
 import { buildProject, parseBuildArguments } from '../lib/build-project.js';
 import { upgradeProject } from '../lib/upgrade-project.js';
 import { parseCollaborationArguments, serviceCollaboration } from '../lib/service-collaboration.js';
+import { configureProject } from '../lib/configure.js';
 
 const toolRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const CLI_VERSION = readJsonObject(path.join(toolRoot, 'package.json')).version;
 
-function usage() {
+function usage(topic = null) {
+    if (topic === 'config') {
+        process.stdout.write(
+            '用法：peanut config [选项]\npeanut help config\n\n'
+            + '为当前 Peanut Admin Code 项目选择本机已安装工具，并写入忽略目录 .local/toolchain/host.json；随后调用现有 scripts/project-env prepare。不会安装软件或修改全局 PATH。\n\n'
+            + '路径基准：所有相对路径均相对 --path 指定的 Code 项目根，默认当前工作目录；Core 独立 host 中的 commands/caches/extra_path/watch_paths 也以 Code 项目根为基准。\n\n'
+            + '选项：\n'
+            + '  --path <目录>                 Code 项目根，默认当前目录\n'
+            + '  --php <文件>                  已安装 PHP 可执行文件\n'
+            + '  --node <文件>                 已安装 Node.js 可执行文件\n'
+            + '  --npm <文件>                  已安装 npm 可执行文件\n'
+            + '  --pnpm <文件>                 已安装 pnpm 可执行文件\n'
+            + '  --composer <文件>             已安装 Composer 可执行文件或 PHAR\n'
+            + '  --python <文件>               已安装 Python 3 可执行文件\n'
+            + '  --core-php <目录>              指定本地 PHP Core 源码目录\n'
+            + '  --core-web <目录>              指定本地 Web Core 源码目录\n'
+            + '  --release <路径>               release 输出根，默认 release\n'
+            + '  --backups <路径>               backups 目录，默认 ../backups；仅登记位置\n'
+            + '  --pnpm-cache <路径>             pnpm 缓存目录\n'
+            + '  --npm-cache <路径>              npm 缓存目录\n'
+            + '  --composer-cache <路径>          Composer 缓存目录\n'
+            + '      默认：pnpm .local/toolchain/cache/pnpm，npm .local/toolchain/cache/npm，Composer .local/toolchain/cache/composer；Core 对应 .local/toolchain/cores/<php|web>/cache/<工具>。\n'
+            + '  --extra-path <目录>              追加命令搜索目录，可重复\n'
+            + '  --watch-path <路径>              登记环境指纹观察路径，可重复\n\n'
+            + '  --yes                           确认保存预览中的配置并执行 project-env prepare；非交互使用时必须显式指定。默认先完整预览并询问，拒绝时不写入。\n\n'
+            + '不指定工具时从 PATH 和常见安装目录发现。多个候选会提示选择；推荐版本差异只提示，manifest/平台及原生锁的实际兼容约束仍按 project-env 检查。npm/pnpm 使用同一所选 Node，Composer 使用所选 PHP。Core 工具要求分别从各自 composer.json/package.json 读取；不要求 Core 仓库包含 tools/toolchain.json 或 project-env。Core 源码目录只读，独立配置保存在 Code .local/toolchain/cores/<php|web>/host.json。\n',
+        );
+        return;
+    }
+    if (topic === 'release') {
+        process.stdout.write(
+            '用法：peanut release [选项]\npeanut help release\n\n'
+            + '使用 Code 项目配置的工具环境调用其 scripts/build-scaffold-release，生成 Standalone 与 Multi-tenant 两个脚手架包；失败即停止。默认项目根为当前目录。\n\n'
+            + '路径基准：--path 指定的项目根（默认当前目录）。--output 与 host 中 paths.release 可用相对或绝对路径；相对路径以项目根为基准。\n\n'
+            + '选项：\n'
+            + '  --path <目录>                 Code 脚手架项目根，默认当前目录\n'
+            + '  --version <版本>               必须与 release-versions.json.scaffold_template 完全一致，不自动递增\n'
+            + '  --core-php <版本>               指定已发布 PHP Core 版本\n'
+            + '  --core-web <版本>               指定已发布 Web Core 版本；Web 六包同版\n'
+            + '  --with-local-core               使用 config 登记的本地 Core 源码快照\n'
+            + '  --output <路径>                 输出根，默认 host.paths.release 或 ./release\n'
+            + '  --overwrite                     仅替换该版本下可识别的脚手架产物；未知文件或目录会拒绝\n\n'
+            + '高级维护选项（固定 Git/CI 来源流程）：\n'
+            + '  --source-commit <40hex>          由固定 Git 候选/CI 明确指定真实源码提交\n'
+            + '  --workflow <none|runtime|full>    固定生产工作流投影；需与候选合同匹配\n'
+            + '  --internal-core-inputs <回执>      消费固定内部候选的 Core 冻结回执；必须与该候选工作流组合使用\n'
+            + '  --api-tool-root <目录>             固定 CI/API 工具入口根目录\n'
+            + '高级选项用于已固定输入的维护流水线，普通本地发行无需填写；互斥或不完整组合会拒绝。\n\n'
+            + 'Core 默认选择最新正式稳定版；PHP 与 Web 版本独立，Web 六包保持同版。最终目录为 <output>/<版本>/standalone 和 multi-tenant。已存在同版本目录默认拒绝。host.paths.backups 仅保存备份路径配置，不会新增备份流程。Core 选择、来源和摘要写入包清单；默认不携带 Core 归档。此命令不发布或部署。\n',
+        );
+        return;
+    }
     process.stdout.write(
         `Peanut CLI ${CLI_VERSION}\n`
+        + 'Usage: peanut <command> [options]\n'
+        + '       peanut help [config|release]\n'
+        + '       peanut config [--path <project-root>] [--php <path>] [--node <path>] [--npm <path>] [--pnpm <path>] [--composer <path>] [--python <path>] [--core-php <path>] [--core-web <path>] [--release <path>] [--backups <path>] [--pnpm-cache <path>] [--npm-cache <path>] [--composer-cache <path>] [--extra-path <path>]... [--watch-path <path>]... [--yes]\n'
         + 'Usage: peanut create <absolute-target> --name <name> --slug <slug> --package <vendor/name> [--edition standalone|multi-tenant] [--application-version <semver>] [--ref <version>] [--channel stable|prerelease]\n'
         + '       peanut create <absolute-target> --name <name> --slug <slug> --package <vendor/name> --edition standalone|multi-tenant --archive <absolute-template.tgz> --manifest <absolute-template.json>\n'
         + '       peanut doctor|status [--path <application>]\n'
-        + '       peanut release [--path <scaffold>] [--version <semver>] [--source-commit <full-sha>] [--workflow none|runtime|full] [--api-tool-root <absolute-source-tool-root>] [--internal-core-inputs <absolute-frozen-core-receipt>] [--output <absolute-new-directory>]\n'
+        + '       peanut release [--path <scaffold>] [--version <semver>] [--core-php <version>] [--core-web <version>] [--with-local-core] [--output <path>] [--overwrite]\n'
         + '       peanut package [--path <application>] [--core-inputs <absolute-frozen-core-receipt>] [--output <absolute-new-directory>]\n'
         + '       peanut upgrade [--check|--plan] [--ref <version-or-tag>] [--channel stable|prerelease] [--confirm-major-upgrade] [--path <application>]\n'
         + '       peanut upgrade [--check|--plan] --archive <absolute-template.tgz> --manifest <absolute-template.json> [--source-checkout <absolute-official-source>] [--baseline-mode-manifest <exact-old-release.json>] [--path <application>]\n'
@@ -32,6 +87,11 @@ function usage() {
         + '       peanut service collaboration plan|enable|status|disable --path <application> [--configuration <non-secret-json>] [--expected-revision <n>] [--probe] [--drain-id <original-id>]\n'
         + '       peanut recipe list|status [<id>] [--path <application>]\n'
         + '       peanut recipe add app-ci|scaffold-ci [--path <repository>]\n'
+        + '路径规则：config/release 的路径参数可用相对或绝对路径；相对路径均以所选项目根为基准。\n'
+        + 'config 配置已安装工具并写入项目 .local/toolchain/host.json，不安装软件、不修改全局 PATH。缺省从 PATH 和常见安装目录发现工具；多个版本会交互选择，并显示推荐版本与实际版本差异。\n'
+        + 'config 参数：--path 项目根；--php/--node/--npm/--pnpm/--composer/--python 指定对应可执行文件；--core-php/--core-web 指定本地 Core 仓库；--release/--backups 设置发行与备份目录；--pnpm-cache/--npm-cache/--composer-cache 设置缓存；--extra-path/--watch-path 可重复指定搜索与观察路径。未指定工具路径时自动发现。详见 peanut help config。\n'
+        + 'release 参数：--path 脚手架项目根（默认当前目录）；--version 指定版本，必须等于 release-versions.json.scaffold_template；--core-php/--core-web 固定已发行 Core 版本；--with-local-core 使用 config 选择的本地 Core 快照；--output 指定发行根；--overwrite 仅允许覆盖该版本可识别的脚手架产物，遇到未知文件拒绝。\n'
+        + 'release 默认输出到项目 ./release/<版本>/standalone 和 multi-tenant；不会自动递增版本。\n'
         + 'Interactive create prompts for an Edition when --edition is omitted; non-interactive create requires --edition.\n'
         + 'Edition, profile and workflow are fixed by the selected template package; an explicit mismatch is refused.\n'
         + 'Standalone and multi-tenant are separate application artifacts and deployments; normal upgrades remain within the same Edition.\n'
@@ -162,8 +222,15 @@ function parseUpgradeArguments(raw) {
 }
 
 async function main() {
+    if (process.argv[2] === 'help') {
+        const topic = process.argv[3];
+        if (process.argv.length > 4 || (topic && !['config', 'release'].includes(topic))) throw new Error('PEANUT_HELP_TOPIC_INVALID');
+        usage(topic);
+        return 0;
+    }
     if (['release', 'package'].includes(process.argv[2])) {
-        output(buildProject(process.argv[2], parseBuildArguments(process.argv.slice(3))));
+        if (process.argv.slice(3).some((item) => ['--help', '-h'].includes(item))) { usage(process.argv[2] === 'release' ? 'release' : null); return 0; }
+        output(await buildProject(process.argv[2], parseBuildArguments(process.argv.slice(3))));
         return 0;
     }
     if (process.argv[2] === 'service') {
@@ -181,6 +248,45 @@ async function main() {
         const result = await upgradeProject(parseUpgradeArguments(process.argv.slice(3)));
         output(result);
         return ['blocked', 'source_identity_mismatch', 'source_identity_unknown', 'source_range_unsupported', 'source_ahead', 'source_diverged', 'explicit_release_ref_required', 'confirmation_required'].includes(result.status) ? 1 : 0;
+    }
+    if (process.argv[2] === 'config') {
+        const raw = process.argv.slice(3);
+        let configRoot = process.cwd();
+        let pathSeen = false;
+        const options = {};
+        const allowed = new Map([
+            ['--path', null], ['--php', 'php'], ['--node', 'node'], ['--npm', 'npm'], ['--pnpm', 'pnpm'],
+            ['--composer', 'composer'], ['--python', 'python3'], ['--core-php', 'corePhp'], ['--core-web', 'coreWeb'],
+            ['--release', 'releasePath'], ['--backups', 'backupsPath'], ['--pnpm-cache', 'pnpmCache'],
+            ['--npm-cache', 'npmCache'], ['--composer-cache', 'composerCache'], ['--extra-path', 'extraPaths'],
+            ['--watch-path', 'watchPaths'], ['--yes', 'yes'],
+        ]);
+        for (let index = 0; index < raw.length; index += 1) {
+            const split = raw[index].indexOf('=');
+            const flag = split < 0 ? raw[index] : raw[index].slice(0, split);
+            if (['--help', '-h'].includes(flag)) { usage('config'); return 0; }
+            const key = allowed.get(flag);
+            if (key === undefined) throw new Error('PEANUT_CONFIG_ARGUMENTS_INVALID');
+            if (key === 'yes') {
+                if (split !== -1 || Object.hasOwn(options, key)) throw new Error('PEANUT_CONFIG_ARGUMENTS_INVALID');
+                options.yes = true;
+                continue;
+            }
+            const value = split < 0 ? (raw[++index] ?? '') : raw[index].slice(split + 1);
+            if (!value) throw new Error('PEANUT_CONFIG_ARGUMENTS_INVALID');
+            if (key === null) {
+                if (pathSeen) throw new Error('PEANUT_CONFIG_ARGUMENTS_INVALID');
+                pathSeen = true;
+                configRoot = value;
+            }
+            else if (['extraPaths', 'watchPaths'].includes(key)) (options[key] ??= []).push(value);
+            else {
+                if (Object.hasOwn(options, key)) throw new Error('PEANUT_CONFIG_ARGUMENTS_INVALID');
+                options[key] = value;
+            }
+        }
+        output(await configureProject(projectRoot(configRoot), options));
+        return 0;
     }
     const parsed = parseArguments(process.argv.slice(2));
     if (parsed.special === 'help') { usage(); return 0; }
