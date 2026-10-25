@@ -28,6 +28,7 @@ function usage() {
         + '       peanut upgrade [--check|--plan] --archive <absolute-template.tgz> --manifest <absolute-template.json> [--source-checkout <absolute-official-source>] [--baseline-mode-manifest <exact-old-release.json>] [--path <application>]\n'
         + '       peanut upgrade --apply-plan <plan> [--confirm-plan-sha256 <digest> --preserve-paths <paths|-> --replace-paths <paths|->] [--confirm-major-upgrade] [--path <application>]\n'
         + '       peanut upgrade --recover-plan <plan> [--path <application>]\n'
+        + '       Upgrade coordinator override: --coordinator-root <canonical-git-root> --coordinator-commit <40hex> --installation-source-commit <40hex> (all required; persisted for apply/recover).\n'
         + '       peanut service collaboration plan|enable|status|disable --path <application> [--configuration <non-secret-json>] [--expected-revision <n>] [--probe] [--drain-id <original-id>]\n'
         + '       peanut recipe list|status [<id>] [--path <application>]\n'
         + '       peanut recipe add app-ci|scaffold-ci [--path <repository>]\n'
@@ -132,6 +133,8 @@ function parseUpgradeArguments(raw) {
         ['--preserve-paths', 'preservePaths'], ['--replace-paths', 'replacePaths'],
         ['--archive', 'archive'], ['--manifest', 'manifest'], ['--baseline-mode-manifest', 'baselineModeManifest'],
         ['--source-checkout', 'sourceCheckout'],
+        ['--coordinator-root', 'coordinatorRoot'], ['--coordinator-commit', 'coordinatorCommit'],
+        ['--installation-source-commit', 'installationSourceCommit'],
         ['--check', 'check'], ['--plan', 'plan'], ['--confirm-major-upgrade', 'confirmMajorUpgrade'],
     ]);
     for (let index = 0; index < raw.length; index += 1) {
