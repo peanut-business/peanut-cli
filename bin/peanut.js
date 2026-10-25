@@ -23,7 +23,7 @@ function usage() {
         + '       peanut create <absolute-target> --name <name> --slug <slug> --package <vendor/name> --edition standalone|multi-tenant --archive <absolute-template.tgz> --manifest <absolute-template.json>\n'
         + '       peanut doctor|status [--path <application>]\n'
         + '       peanut release [--path <scaffold>] [--version <semver>] [--source-commit <full-sha>] [--workflow none|runtime|full] [--api-tool-root <absolute-source-tool-root>] [--internal-core-inputs <absolute-frozen-core-receipt>] [--output <absolute-new-directory>]\n'
-        + '       peanut package [--path <application>] [--output <absolute-new-directory>]\n'
+        + '       peanut package [--path <application>] [--core-inputs <absolute-frozen-core-receipt>] [--output <absolute-new-directory>]\n'
         + '       peanut upgrade [--check|--plan] [--ref <version-or-tag>] [--channel stable|prerelease] [--confirm-major-upgrade] [--path <application>]\n'
         + '       peanut upgrade [--check|--plan] --archive <absolute-template.tgz> --manifest <absolute-template.json> [--source-checkout <absolute-official-source>] [--baseline-mode-manifest <exact-old-release.json>] [--path <application>]\n'
         + '       peanut upgrade --apply-plan <plan> [--confirm-plan-sha256 <digest> --preserve-paths <paths|-> --replace-paths <paths|->] [--confirm-major-upgrade] [--path <application>]\n'
