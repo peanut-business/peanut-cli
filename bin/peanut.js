@@ -41,7 +41,7 @@ function usage(topic = null) {
             + '      默认：pnpm .local/toolchain/cache/pnpm，npm .local/toolchain/cache/npm，Composer .local/toolchain/cache/composer；Core 对应 .local/toolchain/cores/<php|web>/cache/<工具>。\n'
             + '  --extra-path <目录>              追加命令搜索目录，可重复\n'
             + '  --watch-path <路径>              登记环境指纹观察路径，可重复\n\n'
-            + '  --yes                           确认保存预览中的配置并执行 project-env prepare；非交互使用时必须显式指定。默认先完整预览并询问，拒绝时不写入。\n\n'
+            + '  --yes                           预览后自动确认保存并执行 project-env prepare；仍会写配置，不代替未解决的工具选择。非交互使用时必须显式指定。默认先完整预览并询问，拒绝时不写入。\n\n'
             + '工具优先级：显式参数 > 已保存的有效绑定 > 自动发现；已有 host 中未改动的工具及路径设置会复用，不重复选择。失效绑定会报错，不静默改选。多个发现候选会提示选择；推荐版本差异只提示，manifest/平台及原生锁的实际兼容约束仍按 project-env 检查。npm/pnpm 使用同一所选 Node，Composer 使用所选 PHP。Core 工具要求分别从各自 composer.json/package.json 读取；不要求 Core 仓库包含 tools/toolchain.json 或 project-env。Core 源码目录只读，独立配置保存在 Code .local/toolchain/cores/<php|web>/host.json。\n',
         );
         return;
