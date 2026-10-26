@@ -17,11 +17,11 @@ npm install -g .
 npm install -g /path/to/peanut-cli-X.Y.Z.tgz
 ```
 
-按命令操作对象选择工作目录：`config` 和 `release` 使用选定的 Peanut Admin Code 根；`doctor`、`status`、`upgrade`、`recipe` 使用对应 APP 或脚手架根；`create` 的第一个参数是新目标目录。既有 `package` 命令只接受有效 APP 根，其保留合同见维护者参考。支持 `--path` 的命令可用它选择根目录；它自身相对当前目录解析，config/release 的其他路径相对选定 Code 根解析。临时 worktree 是独立根。普通用户运行已安装的 `peanut`；CLI 内部调用 Code 的 `scripts/project-env` 和 `scripts/build-scaffold-release`，不直接运行 CLI 源码仓 `bin/peanut.js`。
+按命令操作对象选择工作目录：`config` 和 `release` 使用选定的 Peanut Admin Code 根；`doctor`、`status`、`upgrade`、`recipe` 使用对应 APP 或脚手架根；`create` 的第一个参数是新目标目录。支持 `--path` 的命令可用它选择根目录；它自身相对当前目录解析，config/release 的其他路径相对选定 Code 根解析。临时 worktree 是独立根。普通用户运行已安装的 `peanut`；CLI 内部调用 Code 的 `scripts/project-env` 和 `scripts/build-scaffold-release`，不直接运行 CLI 源码仓 `bin/peanut.js`。
 
 CLI 安装和环境配置是首次准备。环境与路径不变时，日常生成脚手架只需 `peanut release`，无需手动 prepare/install/hash。
 
-模板供 `create` / `upgrade` 消费。产品在自己的 Git `dev` 开发，人工审核后定版到 `main` 及 tag；生产采用固定 main 提交，完整协调尚未接通，见[产品 Git 交付合同](https://github.com/peanut-business/peanut-admin-code/blob/dev/docs/public/application-release.md)。B 包、`peanut package` 和 `release/apps` 退出日常生产步骤；现有 package/Recipe 实现保留其实际消费者，不表示新流程已经交付。
+模板供 `create` / `upgrade` 消费。产品在自己的 Git `dev` 开发，人工审核后定版到 `main` 及 tag；生产采用固定 main 提交，见[产品 Git 交付合同](https://github.com/peanut-business/peanut-admin-code/blob/dev/docs/public/application-release.md)。B 包、`peanut package` 和 `release/apps` 已退役；Recipe 保留独立入口。
 
 ## 2. 命令速查
 
@@ -46,7 +46,6 @@ peanut recipe add scaffold-ci --path /absolute/peanut-admin-code
 | `recipe list` | 列出可用 Recipe |
 | `recipe status [id]` | 查看全部或指定 Recipe 状态 |
 | `recipe add <id>` | 安装指定 Recipe |
-| `package` | 保留的 APP server-only 包工具；非日常生产步骤 |
 
 ## 3. 配置环境：config
 
@@ -152,20 +151,6 @@ peanut recipe add scaffold-ci --path /absolute/peanut-admin-code
 
 <details>
 <summary>维护者参考：高级合同、来源校验与固定发行示例</summary>
-
-### 既有 package 合同
-
-`peanut package` 仍调用APP自己的server-only生产者，供实际保留的包消费者使用；不生成新的Git生产协调，也不作为 `release`、`create`、`upgrade` 后必须补跑的步骤。
-
-```sh
-peanut package --path /absolute/app --output /absolute/new-server-package
-```
-
-| 参数 | 必需/默认 | 说明 |
-| --- | --- | --- |
-| `--path` | 默认当前目录，须为有效APP根 | 调用该APP自有生产脚本 |
-| `--core-inputs` | 可选，绝对路径 | 固定Core输入回执，仅用于package |
-| `--output` | 可选，绝对路径 | 新的输出目录 |
 
 ### config / release 实现合同
 

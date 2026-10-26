@@ -78,7 +78,6 @@ function usage(topic = null) {
         + '       peanut create <absolute-target> --name <name> --slug <slug> --package <vendor/name> --edition standalone|multi-tenant --archive <absolute-template.tgz> --manifest <absolute-template.json>\n'
         + '       peanut doctor|status [--path <application>]\n'
         + '       peanut release [--path <scaffold>] [--version <semver>] [--core-php <version>] [--core-web <version>] [--with-local-core] [--output <path>] [--overwrite]\n'
-        + '       peanut package [--path <application>] [--core-inputs <absolute-frozen-core-receipt>] [--output <absolute-new-directory>]\n'
         + '       peanut upgrade [--check|--plan] [--ref <version-or-tag>] [--channel stable|prerelease] [--confirm-major-upgrade] [--path <application>]\n'
         + '       peanut upgrade [--check|--plan] --archive <absolute-template.tgz> --manifest <absolute-template.json> [--source-checkout <absolute-official-source>] [--baseline-mode-manifest <exact-old-release.json>] [--path <application>]\n'
         + '       peanut upgrade --apply-plan <plan> [--confirm-plan-sha256 <digest> --preserve-paths <paths|-> --replace-paths <paths|->] [--confirm-major-upgrade] [--path <application>]\n'
@@ -228,8 +227,8 @@ async function main() {
         usage(topic);
         return 0;
     }
-    if (['release', 'package'].includes(process.argv[2])) {
-        if (process.argv.slice(3).some((item) => ['--help', '-h'].includes(item))) { usage(process.argv[2] === 'release' ? 'release' : null); return 0; }
+    if (process.argv[2] === 'release') {
+        if (process.argv.slice(3).some((item) => ['--help', '-h'].includes(item))) { usage('release'); return 0; }
         output(await buildProject(process.argv[2], parseBuildArguments(process.argv.slice(3))));
         return 0;
     }
