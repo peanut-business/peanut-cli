@@ -58,7 +58,7 @@ peanut config --path /absolute/peanut-admin-code --yes
 | --- | --- | --- | --- |
 | `--path` | Code 根目录 | 当前目录 | 选择配置项目；自身相对当前目录解析 |
 | `--php`, `--node`, `--npm`, `--pnpm`, `--composer`, `--python` | 已安装工具路径 | 显式参数 > 有效配置 > 自动发现 | 选择本机工具；首次配置 Core 时沿用本项目已选择的工具；已有 Core 配置时保留其已选工具 |
-| `--core-php`, `--core-web` | 本地 Core 源码目录 | 有效配置或邻接发现 | 登记源码目录；不会因此自动随发行包携带 |
+| `--core-php`, `--core-web` | 本地 Core 源码目录（可相对所选 Code 根） | 有效配置或邻接发现 | 始终保存绝对路径，固定绑定实际 Core 位置，避免 Code 工作目录变化后按另一基准解析；`.local` 配置不随 Git 合并，新工作区须重新运行 `config`；不会因此自动随发行包携带 |
 | `--release`, `--backups` | 路径 | release=`release`；backups 初次=`../backups` | 保存发行输出根和备份位置；已有值继续复用 |
 | `--pnpm-cache`, `--npm-cache`, `--composer-cache` | 路径 | `.local/toolchain/cache/<tool>` | 设置工具缓存位置 |
 | `--extra-path`, `--watch-path` | 路径，可重复 | 未指定时复用已存值 | 显式指定额外搜索目录或观察路径列表 |
@@ -148,7 +148,7 @@ peanut package --path /absolute/app --output /absolute/new-server-package
 | `package --core-inputs` | 可选，绝对路径 | 使用固定 Core 输入回执；仅用于 package |
 | `package --output` | 可选，绝对路径 | 指定新的输出目录 |
 
-`config --core-php/--core-web` 的参数值是**本地源码目录**；`release --core-php/--core-web` 的参数值是**已发行版本号**。
+`config --core-php/--core-web` 的参数值是**本地源码目录**，可相对所选 Code 根输入，但配置始终保存绝对路径，以固定绑定实际 Core 位置，避免改变 Code 工作目录后按另一基准解析。`.local` 配置不随 Git 合并，因此新工作区须重新运行 `config`；Code 或 Core 目录位置变化后也须重新运行并提供新的 Core 位置。`release --core-php/--core-web` 的参数值是**已发行版本号**。
 
 <details>
 <summary>维护者参考：高级合同、来源校验与固定发行示例</summary>

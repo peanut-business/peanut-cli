@@ -22,7 +22,7 @@ function usage(topic = null) {
         process.stdout.write(
             '用法：peanut config [选项]\npeanut help config\n\n'
             + '为当前 Peanut Admin Code 项目选择本机已安装工具，并写入忽略目录 .local/toolchain/host.json；随后调用现有 scripts/project-env prepare。不会安装软件或修改全局 PATH。\n\n'
-            + '路径基准：--path 自身相对当前工作目录解析；其余路径及 Core host 中的 commands/caches/extra_path/watch_paths 相对所选 Code 根。\n\n'
+            + '路径基准：--path 自身相对当前工作目录解析；其余路径及 Core host 中的 commands/caches/extra_path/watch_paths 相对所选 Code 根。Core 目录可相对 Code 根输入，配置始终保存绝对路径；.local 配置不随 Git 合并，新工作区或目录位置变化后须重新 config 并指定当前 Core 位置。\n\n'
             + '选项：\n'
             + '  --path <目录>                   Code 项目根，默认当前目录\n'
             + '  --php <文件>                    PHP 可执行文件\n'
@@ -89,7 +89,7 @@ function usage(topic = null) {
         + '       peanut recipe add app-ci|scaffold-ci [--path <repository>]\n'
         + '路径规则：config/release 的路径参数可用相对或绝对路径；相对路径均以所选项目根为基准。\n'
         + 'config 配置已安装工具并写入项目 .local/toolchain/host.json，不安装软件、不修改全局 PATH。缺省从 PATH 和常见安装目录发现工具；多个版本会交互选择，并显示推荐版本与实际版本差异。\n'
-        + 'config 参数：--path 项目根；--php/--node/--npm/--pnpm/--composer/--python 指定对应可执行文件；--core-php/--core-web 指定本地 Core 仓库；--release/--backups 设置发行与备份目录；--pnpm-cache/--npm-cache/--composer-cache 设置缓存；--extra-path/--watch-path 可重复指定搜索与观察路径。优先级为显式参数 > 已保存的有效配置 > 自动发现；未改动的配置直接复用，不重复选择。详见 peanut help config。\n'
+        + 'config 参数：--path 项目根；--php/--node/--npm/--pnpm/--composer/--python 指定对应可执行文件；--core-php/--core-web 指定本地 Core 仓库（可相对 Code 根输入，按绝对路径保存；新工作区或目录位置变化后重新 config 并指定当前 Core 位置）；--release/--backups 设置发行与备份目录；--pnpm-cache/--npm-cache/--composer-cache 设置缓存；--extra-path/--watch-path 可重复指定搜索与观察路径。优先级为显式参数 > 已保存的有效配置 > 自动发现；未改动的配置直接复用，不重复选择。详见 peanut help config。\n'
         + 'release 参数：--path 脚手架项目根（默认当前目录）；--version 指定版本，必须等于 release-versions.json.scaffold_template；--core-php/--core-web 固定已发行 Core 版本；--with-local-core 使用 config 选择的本地 Core 快照；--output 指定发行根；--overwrite 仅允许覆盖该版本可识别的脚手架产物，遇到未知文件拒绝。\n'
         + 'release 默认输出到项目 ./release/<版本>/standalone 和 multi-tenant；不会自动递增版本。\n'
         + 'Interactive create prompts for an Edition when --edition is omitted; non-interactive create requires --edition.\n'
