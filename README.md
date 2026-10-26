@@ -57,7 +57,7 @@ peanut config --path /absolute/peanut-admin-code --yes
 | 参数 | 取值 | 默认或复用 | 作用 |
 | --- | --- | --- | --- |
 | `--path` | Code 根目录 | 当前目录 | 选择配置项目；自身相对当前目录解析 |
-| `--php`, `--node`, `--npm`, `--pnpm`, `--composer`, `--python` | 已安装工具路径 | 显式参数 > 有效配置 > 自动发现 | 选择本机工具；首次配置 Core 沿用本项目已选工具；已有 Core 配置则保留其选择 |
+| `--php`, `--node`, `--npm`, `--pnpm`, `--composer`, `--python` | 已安装工具路径 | 显式参数 > 有效配置 > 自动发现 | 选择本机工具；首次配置 Core 时沿用本项目已选择的工具；已有 Core 配置时保留其已选工具 |
 | `--core-php`, `--core-web` | 本地 Core 源码目录 | 有效配置或邻接发现 | 登记源码目录；不会因此自动随发行包携带 |
 | `--release`, `--backups` | 路径 | release=`release`；backups 初次=`../backups` | 保存发行输出根和备份位置；已有值继续复用 |
 | `--pnpm-cache`, `--npm-cache`, `--composer-cache` | 路径 | `.local/toolchain/cache/<tool>` | 设置工具缓存位置 |
@@ -144,7 +144,7 @@ peanut package --path /absolute/app --output /absolute/new-server-package
 | `recipe list` | `--path` 默认当前目录 | 列出内置可用 Recipe；不接受 id |
 | `recipe status [id]` | id 可省略 | 查看全部或指定 Recipe 状态 |
 | `recipe add <id>` | id 必需 | 添加 `app-ci` 或 `scaffold-ci`；路径选 APP 或脚手架仓 |
-| `package --path` | 必需有效 APP 根 | 调用 APP 自有 server-only 打包脚本 |
+| `package --path` | 默认当前目录；必须为有效 APP 根 | 调用 APP 自有 server-only 打包脚本 |
 | `package --core-inputs` | 可选，绝对路径 | 使用固定 Core 输入回执；仅用于 package |
 | `package --output` | 可选，绝对路径 | 指定新的输出目录 |
 
