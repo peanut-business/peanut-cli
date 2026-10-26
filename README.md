@@ -1,30 +1,165 @@
 # Peanut CLI
 
-Independent developer CLI and tooling for Peanut products.
+Peanut CLI 是独立版本的 `peanut` 命令行工具，负责 Peanut 应用模板、环境配置、诊断、升级和 Recipe 管理。
 
-Peanut CLI is the source of truth for the global `peanut` command. It is independently versioned from Peanut Admin, PHP Core, Web Core, downstream applications, and Recipes.
+## 1. 安装与工作目录
 
-## Current development line
-
-The current development source implements archive-based creation and native release/package entries. These changes are not claimed as a published CLI version until a release receipt exists.
+开发期从 CLI 仓库安装或更新：
 
 ```sh
-peanut --version
-peanut config --path <project-root>
-peanut create /absolute/new-app --name "Business App" --slug business-app --package example/business-app --edition standalone
-peanut create /absolute/new-app --name "Business App" --slug business-app --package example/business-app --edition standalone --archive /absolute/peanut-scaffold-standalone.tgz --manifest /absolute/peanut-scaffold-standalone.json
-peanut release [--path <scaffold>] [--version <semver>] [--core-php <version>] [--core-web <version>] [--with-local-core] [--output <path>] [--overwrite]
-peanut package --path /absolute/app --output /absolute/new-server-package
-peanut doctor [--path <application>]
-peanut status [--path <application>]
-peanut upgrade --check [--path <application>]
-peanut upgrade --plan [--ref <version-or-tag>] [--path <application>]
-peanut upgrade [--ref <version-or-tag>] [--path <application>]
-peanut recipe list [--path <application>]
-peanut recipe status [<id>] [--path <application>]
-peanut recipe add app-ci --path <application>
-peanut recipe add scaffold-ci --path <scaffold>
+cd /path/to/peanut-cli
+npm install -g .
 ```
+
+正式安装或更新使用 GitHub Release 附带的 tarball。npm registry 未配置；开发源码和未发布版本不能描述为正式发行。已下载 tarball 的安装形式如下，文件名仅作占位：
+
+```sh
+npm install -g /path/to/peanut-cli-X.Y.Z.tgz
+```
+
+按命令操作对象选择工作目录：`config` 和 `release` 使用选定的 Peanut Admin Code 根；`doctor`、`status`、`upgrade`、`package`、`recipe` 使用目标 APP 或脚手架根；`create` 的第一个参数是新目标目录。支持 `--path` 的命令可用它选择根目录。`--path` 自身相对命令当前目录解析；config/release 的其他路径相对选定 Code 根解析。临时 worktree 是独立项目根，勿与日常 Documents 主目录混用。普通用户运行已安装的 `peanut` 命令；CLI 内部调用 Code 的 `scripts/project-env` 和 `scripts/build-scaffold-release`，不直接运行 CLI 仓库 `bin/peanut.js`。
+
+CLI 安装和环境配置是首次准备。环境与路径不变时，日常生成脚手架只需 `peanut release`，无需手动 prepare/install/hash。
+
+## 2. 命令速查
+
+```sh
+peanut help
+peanut --version
+peanut doctor --path /absolute/app
+peanut status --path /absolute/app
+peanut recipe list --path /absolute/app
+peanut recipe status app-ci --path /absolute/app
+peanut recipe add app-ci --path /absolute/app
+```
+
+| 命令 | 用途 |
+| --- | --- |
+| `help`, `--version` | 查看命令摘要和 CLI 版本 |
+| `config` | 选择已安装工具并保存项目环境配置 |
+| `release` | 生成 Standalone、Multi-tenant 脚手架包 |
+| `create` | 从官方模板或本地归档创建应用 |
+| `upgrade` | 检查、规划、应用或恢复模板升级 |
+| `doctor`, `status` | 诊断或查看应用状态 |
+| `recipe list` | 列出可用 Recipe |
+| `recipe status [id]` | 查看全部或指定 Recipe 状态 |
+| `recipe add <id>` | 安装指定 Recipe |
+| `package` | 调用应用原生入口生成 server-only 包 |
+
+## 3. 配置环境：config
+
+```sh
+peanut config --path /absolute/peanut-admin-code
+peanut config --path /absolute/peanut-admin-code --php /usr/bin/php --node /usr/local/bin/node
+peanut config --path /absolute/peanut-admin-code --yes
+```
+
+| 参数 | 取值 | 默认或复用 | 作用 |
+| --- | --- | --- | --- |
+| `--path` | Code 根目录 | 当前目录 | 选择配置项目；自身相对当前目录解析 |
+| `--php`, `--node`, `--npm`, `--pnpm`, `--composer`, `--python` | 已安装工具路径 | 显式参数 > 有效配置 > 自动发现 | 选择本机工具；首次配置 Core 沿用本项目已选工具；已有 Core 配置则保留其选择 |
+| `--core-php`, `--core-web` | 本地 Core 源码目录 | 有效配置或邻接发现 | 登记源码目录；不会因此自动随发行包携带 |
+| `--release`, `--backups` | 路径 | release=`release`；backups 初次=`../backups` | 保存发行输出根和备份位置；已有值继续复用 |
+| `--pnpm-cache`, `--npm-cache`, `--composer-cache` | 路径 | `.local/toolchain/cache/<tool>` | 设置工具缓存位置 |
+| `--extra-path`, `--watch-path` | 路径，可重复 | 未指定时复用已存值 | 显式指定额外搜索目录或观察路径列表 |
+| `--yes` | 开关 | 默认预览后询问 | 自动确认写入并执行 prepare；不是只读，也不代替工具选择 |
+
+配置保存在 Code `.local/toolchain/host.json`；Core 各自配置在 `.local/toolchain/cores/<php|web>/host.json`。
+
+## 4. 生成脚手架：release
+
+```sh
+cd /absolute/peanut-admin-code
+peanut release
+peanut release --output ../artifacts --overwrite
+peanut release --with-local-core
+```
+
+| 参数 | 取值 | 默认或复用 | 作用 |
+| --- | --- | --- | --- |
+| `--path` | Code 根目录 | 当前目录 | 选择脚手架源码根 |
+| `--version` | 版本号 | `release-versions.json.scaffold_template` | 匹配断言，不自动递增 |
+| `--core-php`, `--core-web` | 已发行版本 | 最新正式稳定版 | 选择 PHP/Web Core 版本；Web 六包同版 |
+| `--with-local-core` | 开关 | 默认不携带 | 携带 PHP Core 源码包和 Web Core 构建库包 |
+| `--output` | 路径 | 配置 `paths.release` 或 `./release` | 指定输出根；相对路径以 Code 根解析 |
+| `--overwrite` | 开关 | 已有版本默认拒绝 | 原位替换已知产物；存在未知内容时拒绝 |
+
+输出为“解析后的输出根/<版本>/{standalone,multi-tenant}”；仅当输出根为相对路径时才拼接 Code 根。本地 Core 配置目录不会自动随包携带；前端依赖采用 Core 构建库模式。命令内部调用所选 Code 根的环境入口和原生构建脚本；不发布或部署。
+
+## 5. 创建应用：create
+
+```sh
+peanut create /absolute/new-app --name "Business App" --slug business-app --package example/business-app --edition standalone
+peanut create /absolute/new-app --name "Business App" --slug business-app --package example/business-app --edition standalone --archive /absolute/template.tgz --manifest /absolute/template.json
+```
+
+| 参数 | 必需/默认 | 说明 |
+| --- | --- | --- |
+| `<目标>` | 必需，绝对路径 | 目标必须不存在或为空目录 |
+| `--name`, `--slug`, `--package` | 必需 | 产品名、应用 slug、`vendor/name` |
+| `--edition` | 交互终端可选择；非交互必需 | `standalone` 或 `multi-tenant`，没有隐式默认 |
+| `--application-version` | 模板声明的默认值 | 设置独立 APP 版本 |
+| `--ref` | 最新 stable | 固定官方模板版本；`--channel` 可选 `stable`/`prerelease` |
+| `--archive`, `--manifest` | 必须成对 | 使用绝对路径本地包；不可与 `--ref`/`--channel` 同用 |
+| `--profile`, `--workflow` | 模板固定值 | 可作一致性断言；不匹配会拒绝。Workflow 可为 `none`/`runtime`/`full` |
+
+## 6. 升级应用：upgrade
+
+```sh
+peanut upgrade --check --path /absolute/app
+peanut upgrade --plan --ref 5.0.2 --path /absolute/app
+peanut upgrade --apply-plan /absolute/plan.json --path /absolute/app
+peanut upgrade --recover-plan /absolute/plan.json --path /absolute/app
+```
+
+| 参数 | 必需/默认 | 说明 |
+| --- | --- | --- |
+| `--path` | 当前目录 | APP 根目录 |
+| `--check` 或 `--plan` | 两者择一；都省略则创建计划 | 不能与 apply/recover 组合 |
+| `--ref`, `--channel` | 默认 stable | 选择官方版本/通道；通道为 `stable` 或 `prerelease` |
+| `--archive`, `--manifest` | 必须成对 | 本地归档及清单；不能与 `--ref`/`--channel` 同用 |
+| `--source-checkout` | 可选 | 本地开发包的来源证明 checkout；须与 archive/manifest 同用 |
+| `--baseline-mode-manifest` | 可选 | 为旧 APP 基线模式提供原始发布清单 |
+| `--apply-plan` | 使用已有计划时必需 | 应用指定计划；可配 `--confirm-plan-sha256`、`--preserve-paths`、`--replace-paths` |
+| `--recover-plan` | 恢复时必需 | 按原计划执行文件恢复；不可与来源选择参数同用 |
+| `--confirm-major-upgrade` | 跨主版本 apply 时必需 | 确认跨主版本升级；需先审阅计划并获授权 |
+
+`--apply-plan` 与 `--recover-plan` 是真实命令选项；CLI 没有单独的 `--apply` 开关。`--preserve-paths` 与 `--replace-paths` 使用路径列表，空列表写 `-`。
+
+## 7. 诊断、状态、Recipe 与打包
+
+```sh
+peanut doctor --path /absolute/app
+peanut status --path /absolute/app
+peanut recipe list --path /absolute/app
+peanut recipe status --path /absolute/app
+peanut recipe status app-ci --path /absolute/app
+peanut recipe add app-ci --path /absolute/app
+peanut package --path /absolute/app --output /absolute/new-server-package
+```
+
+| 命令/参数 | 必需/默认 | 说明 |
+| --- | --- | --- |
+| `doctor`, `status` | `--path` 默认当前目录 | 检查或输出应用/脚手架状态；根目录须含有效应用清单或脚手架 inventory 及版本合同 |
+| `recipe list` | `--path` 默认当前目录 | 列出内置可用 Recipe；不接受 id |
+| `recipe status [id]` | id 可省略 | 查看全部或指定 Recipe 状态 |
+| `recipe add <id>` | id 必需 | 添加 `app-ci` 或 `scaffold-ci`；路径选 APP 或脚手架仓 |
+| `package --path` | 必需有效 APP 根 | 调用 APP 自有 server-only 打包脚本 |
+| `package --core-inputs` | 可选，绝对路径 | 使用固定 Core 输入回执；仅用于 package |
+| `package --output` | 可选，绝对路径 | 指定新的输出目录 |
+
+`config --core-php/--core-web` 的参数值是**本地源码目录**；`release --core-php/--core-web` 的参数值是**已发行版本号**。
+
+<details>
+<summary>维护者参考：高级合同、来源校验与固定发行示例</summary>
+
+### config / release 实现合同
+
+- `config` 先预览工具、推荐版本、路径、来源文件和写入对象，再由用户确认；`--yes` 只跳过最终确认，仍写入并调用 Code `scripts/project-env prepare`。它不消解歧义选择。拒绝确认不改文件；未提供新参数时复用有效绑定和路径。
+- 配置只登记已安装工具，不安装软件或修改全局 PATH。Core 要求分别来自其 `composer.json` / `package.json`；Core 源码只读，独立 host 与缓存位于 Code `.local/toolchain/cores/php|web/`。Core 首次选择继承主工具已选 scope，既有 Core scope 复用自身绑定。主缓存默认 `.local/toolchain/cache/{pnpm,npm,composer}`，Core 缓存默认 `.local/toolchain/cores/{php,web}/cache/<tool>`。
+- 推荐版本差异只告警；manifest/platform 要求和原生锁仍受校验。外部 Composer 绑定本地路径、版本与文件 SHA-256，用于发现本地文件替换，不证明官方来源。
+- `release` 对当前磁盘源码快照发行（包含未提交内容），排除 Git 元数据、本地配置、依赖、运行数据和旧输出。Core 版本独立，Web 六包同版；Core 来源与摘要写入清单。默认不携带 Core 归档。
+- 固定 Git/CI 流程可用 `--source-commit` 固定源码提交、`--workflow` 选择投影、`--internal-core-inputs` 消费内部候选冻结 Core 回执、`--api-tool-root` 选择 API 工具入口。它们须符合固定候选来源/工作流合同；普通本地发行不使用这些参数，不能用占位 Git 身份替代正式检查。
 
 The current source catalog separates `app-ci@1.0.0` from `scaffold-ci@1.0.0`. APP CI calls the APP's existing server-only producer with its explicit root. Scaffold CI calls the same native template producer as `peanut release`, serially for both Editions, and uploads the four fixed template files. These workflows prepare candidates; formal GitHub publication still requires the release qualification and authorized CI publication path. The CLI repository's own release workflow publishes only CLI artifacts. Source installation does not publish or execute CI.
 `peanut create` defaults to the latest official stable GitHub template attachment. `--ref <version>` pins a release; prereleases require explicit `--channel prerelease`. Releases without the paired Edition template attachments fail closed. Local `--archive` and `--manifest` must be absolute and cannot be combined with release/channel selection. Local provenance remains development/local. There is no Git-source or dev fallback, implicit dependency install, database operation or service start.
@@ -40,19 +175,6 @@ The two Editions are separate deliverables and deployments. `standalone` produce
 For product validation, shared code and the common lifecycle do not need two identical full test runs. Use the maintainer's two registered permanent APPs for post-package validation; do not create a new test APP per attempt. Shared lifecycle evidence may be reused only for unchanged inputs and genuinely shared behavior. Multi-tenant should be the primary broad functional/regression target because it includes the additional Platform, tenant-management, Host and tenant-switching surfaces. The other Edition still requires its Edition projection checks and critical create/install/start/login/deploy/upgrade smoke path. Edition-specific behavior must be tested in the Edition that owns it.
 
 Creation validates package/file digests, fixed source, Edition, member uniqueness, regular-file types, size and path boundaries before staging. It records package provenance and rebuilds final file/tree hashes and managed baselines while retaining app-owned defaults. Official Module contents remain fixed; APP branding changes host identity. Composer content-hash and API input hashes use final bytes without dependency resolution. An absent or strictly empty target is accepted; hidden files, `.git`, any other content and symlink path components are refused. Failure removes only the unadopted staging tree.
-
-### Explicit implementation boundary
-
-`peanut config` first previews all selected tools, recommendations, paths, source files, and files/directories it will write. It saves only after explicit confirmation; `--yes` skips only the final y/N confirmation after preview, then still writes the host configuration and calls `scripts/project-env prepare`. It does not resolve ambiguous tool selection. Declining leaves the filesystem unchanged. With no new tool/Core/path options, valid saved bindings and paths are reused; that reuse does not make config read-only. It writes installed tool bindings and release/backups/Core locations to the selected Code project's ignored `.local/toolchain/host.json`. Relative paths use the selected Code root; absolute paths are also accepted. PHP/Web Core requirements come from each Core's `composer.json` or `package.json`; their independent bindings and caches stay in Code `.local/toolchain/cores/php|web/host.json`, and Core source directories remain read-only. Recommended version differences are warnings; manifest/platform requirements and native lock behavior remain enforced. A selected external Composer is bound locally by its path, version and file SHA-256; this digest detects local file replacement and is not proof of official origin. Config does not install software or alter global PATH. After confirmation it creates configured cache directories and calls the existing Code `scripts/project-env prepare` entry.
-
-`peanut help config`, `peanut config --help`, `peanut help release` and `peanut release --help` display the full Chinese option descriptions, defaults and path rules. Config supports `--path`, per-tool executable selectors (`--php`, `--node`, `--npm`, `--pnpm`, `--composer`, `--python`), `--core-php`/`--core-web` checkout paths, `--release`/`--backups`, per-manager cache paths, repeatable `--extra-path`/`--watch-path` values, and `--yes` confirmation after preview. Tool selection follows explicit options, valid saved host bindings, then automatic discovery; an unchanged configuration reuses its saved tool and path settings without asking again. Main cache defaults are `.local/toolchain/cache/{pnpm,npm,composer}`; Core cache defaults are `.local/toolchain/cores/{php,web}/cache/<tool>`.
-
-`peanut release` runs each Edition through the selected project environment and the Code checkout's native `scripts/build-scaffold-release`. It snapshots current disk source, including dirty and uncommitted files, while excluding Git metadata, local configuration, dependencies, runtime data and prior outputs. The default output is `release/<scaffold-version>/{standalone,multi-tenant}`. `--version` must match `release-versions.json.scaffold_template`; versions are never bumped automatically. Existing version output is refused unless `--overwrite` is explicit; unknown files block overwrite. Relative `--path` and `--output` values use the selected project root. PHP Core and Web Core versions are independent; the Web Core six packages share one version. `package` delegates to the APP's own `scripts/package-release.sh --server-only`. Neither command publishes or deploys.
-
-Fixed Git/CI workflows retain their explicit advanced options: `--source-commit` pins the real source commit; `--workflow` selects the fixed projection; `--internal-core-inputs` consumes the frozen Core receipt for an internal candidate; `--api-tool-root` selects the prepared API generator checkout. These are not required for a normal local release. The frozen receipt must match its fixed source and workflow; package mode does not accept release-only options. No option substitutes a placeholder Git identity or changes the fixed formal release checks.
-
-
-`package` reports success only after the native producer exits successfully and its output directory, server identity, archive and paired archive manifest exist and match the selected APP, committed source and recorded digests. A missing or inconsistent output remains a failed command even if an older native script exits zero prematurely.
 
 ## Development APP upstream upgrades
 
@@ -151,3 +273,5 @@ For current Code, use the APP-owned `server/docker/scripts/configure-collaborati
 For an existing old APP that actually implements lifecycle.v1, the retained wrapper supports plan/enable/status/disable and requires explicit `--path`. It invokes that APP's ordinary single-link entry through Python with literal argv; it does not read secret files or call Node directly. Legacy enable performs its native preparation only; status without probe is not health. Disable keeps the original drain ID on unknown outcomes and requires the exact protocol-2 durable-drain and native-stop proof. Retaining compatibility commands does not authorize restarting a stopped environment.
 
 Strict keys/types/action/exit consistency, signed and paired readiness, holder binding, failure and unknown behavior remain enforced by the existing validator. A malformed response fails closed. Updating this adapter to the new native contract is a separate implementation task; no new service capability or runtime qualification is claimed here.
+
+</details>
