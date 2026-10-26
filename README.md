@@ -17,9 +17,11 @@ npm install -g .
 npm install -g /path/to/peanut-cli-X.Y.Z.tgz
 ```
 
-按命令操作对象选择工作目录：`config` 和 `release` 使用选定的 Peanut Admin Code 根；`doctor`、`status`、`upgrade`、`package`、`recipe` 使用目标 APP 或脚手架根；`create` 的第一个参数是新目标目录。支持 `--path` 的命令可用它选择根目录。`--path` 自身相对命令当前目录解析；config/release 的其他路径相对选定 Code 根解析。临时 worktree 是独立项目根，勿与日常 Documents 主目录混用。普通用户运行已安装的 `peanut` 命令；CLI 内部调用 Code 的 `scripts/project-env` 和 `scripts/build-scaffold-release`，不直接运行 CLI 仓库 `bin/peanut.js`。
+按命令操作对象选择工作目录：`config` 和 `release` 使用选定的 Peanut Admin Code 根；`doctor`、`status`、`upgrade`、`recipe` 使用对应 APP 或脚手架根；`create` 的第一个参数是新目标目录。既有 `package` 命令只接受有效 APP 根，其保留合同见维护者参考。支持 `--path` 的命令可用它选择根目录；它自身相对当前目录解析，config/release 的其他路径相对选定 Code 根解析。临时 worktree 是独立根。普通用户运行已安装的 `peanut`；CLI 内部调用 Code 的 `scripts/project-env` 和 `scripts/build-scaffold-release`，不直接运行 CLI 源码仓 `bin/peanut.js`。
 
 CLI 安装和环境配置是首次准备。环境与路径不变时，日常生成脚手架只需 `peanut release`，无需手动 prepare/install/hash。
+
+模板供 `create` / `upgrade` 消费。产品在自己的 Git `dev` 开发，人工审核后定版到 `main` 及 tag；生产采用固定 main 提交，完整协调尚未接通，见[产品 Git 交付合同](https://github.com/peanut-business/peanut-admin-code/blob/dev/docs/public/application-release.md)。B 包、`peanut package` 和 `release/apps` 退出日常生产步骤；现有 package/Recipe 实现保留其实际消费者，不表示新流程已经交付。
 
 ## 2. 命令速查
 
@@ -30,7 +32,7 @@ peanut doctor --path /absolute/app
 peanut status --path /absolute/app
 peanut recipe list --path /absolute/app
 peanut recipe status app-ci --path /absolute/app
-peanut recipe add app-ci --path /absolute/app
+peanut recipe add scaffold-ci --path /absolute/peanut-admin-code
 ```
 
 | 命令 | 用途 |
@@ -44,7 +46,7 @@ peanut recipe add app-ci --path /absolute/app
 | `recipe list` | 列出可用 Recipe |
 | `recipe status [id]` | 查看全部或指定 Recipe 状态 |
 | `recipe add <id>` | 安装指定 Recipe |
-| `package` | 调用应用原生入口生成 server-only 包 |
+| `package` | 保留的 APP server-only 包工具；非日常生产步骤 |
 
 ## 3. 配置环境：config
 
@@ -126,7 +128,7 @@ peanut upgrade --recover-plan /absolute/plan.json --path /absolute/app
 
 `--apply-plan` 与 `--recover-plan` 是真实命令选项；CLI 没有单独的 `--apply` 开关。`--preserve-paths` 与 `--replace-paths` 使用路径列表，空列表写 `-`。
 
-## 7. 诊断、状态、Recipe 与打包
+## 7. 诊断、状态与 Recipe
 
 ```sh
 peanut doctor --path /absolute/app
@@ -134,8 +136,7 @@ peanut status --path /absolute/app
 peanut recipe list --path /absolute/app
 peanut recipe status --path /absolute/app
 peanut recipe status app-ci --path /absolute/app
-peanut recipe add app-ci --path /absolute/app
-peanut package --path /absolute/app --output /absolute/new-server-package
+peanut recipe add scaffold-ci --path /absolute/peanut-admin-code
 ```
 
 | 命令/参数 | 必需/默认 | 说明 |
@@ -144,14 +145,25 @@ peanut package --path /absolute/app --output /absolute/new-server-package
 | `recipe list` | `--path` 默认当前目录 | 列出内置可用 Recipe；不接受 id |
 | `recipe status [id]` | id 可省略 | 查看全部或指定 Recipe 状态 |
 | `recipe add <id>` | id 必需 | 添加 `app-ci` 或 `scaffold-ci`；路径选 APP 或脚手架仓 |
-| `package --path` | 默认当前目录；必须为有效 APP 根 | 调用 APP 自有 server-only 打包脚本 |
-| `package --core-inputs` | 可选，绝对路径 | 使用固定 Core 输入回执；仅用于 package |
-| `package --output` | 可选，绝对路径 | 指定新的输出目录 |
 
 `config --core-php/--core-web` 的参数值是**本地源码目录**，可相对所选 Code 根输入，但配置始终保存绝对路径，以固定绑定实际 Core 位置，避免改变 Code 工作目录后按另一基准解析。`.local` 配置不随 Git 合并，因此新工作区须重新运行 `config`；Code 或 Core 目录位置变化后也须重新运行并提供新的 Core 位置。`release --core-php/--core-web` 的参数值是**已发行版本号**。
 
 <details>
 <summary>维护者参考：高级合同、来源校验与固定发行示例</summary>
+
+### 既有 package 合同
+
+`peanut package` 仍调用APP自己的server-only生产者，供实际保留的包消费者使用；不生成新的Git生产协调，也不作为 `release`、`create`、`upgrade` 后必须补跑的步骤。
+
+```sh
+peanut package --path /absolute/app --output /absolute/new-server-package
+```
+
+| 参数 | 必需/默认 | 说明 |
+| --- | --- | --- |
+| `--path` | 默认当前目录，须为有效APP根 | 调用该APP自有生产脚本 |
+| `--core-inputs` | 可选，绝对路径 | 固定Core输入回执，仅用于package |
+| `--output` | 可选，绝对路径 | 新的输出目录 |
 
 ### config / release 实现合同
 
@@ -161,7 +173,7 @@ peanut package --path /absolute/app --output /absolute/new-server-package
 - `release` 对当前磁盘源码快照发行（包含未提交内容），排除 Git 元数据、本地配置、依赖、运行数据和旧输出。Core 版本独立，Web 六包同版；Core 来源与摘要写入清单。默认不携带 Core 归档。
 - 固定 Git/CI 流程可用 `--source-commit` 固定源码提交、`--workflow` 选择投影、`--internal-core-inputs` 消费内部候选冻结 Core 回执、`--api-tool-root` 选择 API 工具入口。它们须符合固定候选来源/工作流合同；普通本地发行不使用这些参数，不能用占位 Git 身份替代正式检查。
 
-The current source catalog separates `app-ci@1.0.0` from `scaffold-ci@1.0.0`. APP CI calls the APP's existing server-only producer with its explicit root. Scaffold CI calls the same native template producer as `peanut release`, serially for both Editions, and uploads the four fixed template files. These workflows prepare candidates; formal GitHub publication still requires the release qualification and authorized CI publication path. The CLI repository's own release workflow publishes only CLI artifacts. Source installation does not publish or execute CI.
+The current source catalog separates `app-ci@1.0.0` from `scaffold-ci@1.0.0`. APP CI still calls the existing server-only producer with its explicit root; it has not been adapted to the product Git delivery workflow and is not a routine production prerequisite. Scaffold CI calls the same native template producer as `peanut release`, serially for both Editions, and uploads the four fixed template files. These workflows prepare candidates; formal GitHub publication still requires release qualification and authorized CI publication. The CLI repository's own release workflow publishes only CLI artifacts. Source installation does not publish or execute CI.
 `peanut create` defaults to the latest official stable GitHub template attachment. `--ref <version>` pins a release; prereleases require explicit `--channel prerelease`. Releases without the paired Edition template attachments fail closed. Local `--archive` and `--manifest` must be absolute and cannot be combined with release/channel selection. Local provenance remains development/local. There is no Git-source or dev fallback, implicit dependency install, database operation or service start.
 
 Template packages require `peanut.template-package.v1` and its complete creation payload. Historical releases without these attachments cannot be consumed by archive creation; updating CLI does not retrofit published assets.
@@ -172,7 +184,7 @@ Profile and Workflow are fixed by the template. Optional `--profile`/`--workflow
 
 The two Editions are separate deliverables and deployments. `standalone` produces the single-tenant projection and omits the Platform bundle; `multi-tenant` produces the Platform/tenant-management projection. Their runtime directories, configuration and deployment identities must not be mixed, and normal APP/scaffold upgrades remain within the recorded Edition rather than changing Edition as a side effect.
 
-For product validation, shared code and the common lifecycle do not need two identical full test runs. Use the maintainer's two registered permanent APPs for post-package validation; do not create a new test APP per attempt. Shared lifecycle evidence may be reused only for unchanged inputs and genuinely shared behavior. Multi-tenant should be the primary broad functional/regression target because it includes the additional Platform, tenant-management, Host and tenant-switching surfaces. The other Edition still requires its Edition projection checks and critical create/install/start/login/deploy/upgrade smoke path. Edition-specific behavior must be tested in the Edition that owns it.
+Creating a template or APP does not establish runtime, upgrade or production qualification. Record verification against the actual selected source and Edition; reuse evidence only when its inputs and behavior remain applicable. Existing APP directories, installation identities and data remain intact. This public CLI contract does not require access to maintainer environments or authorize test runs.
 
 Creation validates package/file digests, fixed source, Edition, member uniqueness, regular-file types, size and path boundaries before staging. It records package provenance and rebuilds final file/tree hashes and managed baselines while retaining app-owned defaults. Official Module contents remain fixed; APP branding changes host identity. Composer content-hash and API input hashes use final bytes without dependency resolution. An absent or strictly empty target is accepted; hidden files, `.git`, any other content and symlink path components are refused. Failure removes only the unadopted staging tree.
 
@@ -201,7 +213,7 @@ peanut upgrade --apply-plan .peanut/upgrades/plans/<candidate>.json \
 
 A ready plan uses `peanut upgrade --apply-plan <plan> --path /absolute/app`. Cross-major and development-to-official transitions additionally require `--confirm-major-upgrade` under the existing human authorization boundary. An AI/Agent must explain the versions and risk and obtain authorization for that scope; prior explicit authorization is sufficient. Neither a ref nor conflict choices replace that authorization. Saved apply and recovery reuse the bound archive, source, engine and plan; they never discover latest again. Altered engine/tooling files, undeclared execution inputs, symlinks and changed plan bindings are rejected.
 
-After a failed apply, inspect the native journal and use `peanut upgrade --recover-plan <plan> --path /absolute/app`. This restores source only. Source upgrades do not install APP dependencies, build clients, run migrations, start services or deploy production. Follow the changed locks and affected clients when preparing the APP's normal runtime and server-only release.
+After a failed apply, inspect the native journal and use `peanut upgrade --recover-plan <plan> --path /absolute/app`. This restores source only. Source upgrades do not install APP dependencies, build clients, run migrations, start services or deploy production. Prepare the APP runtime according to changed locks and affected clients; product Git versioning and production adoption are separate stages.
 
 A template that implements native installed-source adoption can bind an already installed generated APP to its immutable installation receipt/baseline and current configuration, under the existing source and instance locks. Its source coordinator requires actual stopped-process/open-file/container observations; a missing Docker configuration file is not evidence of no containers. Python 3 from the template's toolchain, `ps`, `lsof` and a complete readable Docker container view must be available. Missing tools, inaccessible observations, active users or unknown operations are refused, without installing tools or stopping services implicitly. The verified cached template supplies the native tooling, so the old APP does not need a manual upgrade-script patch. Source apply retains maintenance until the same plan is verified or recovered, and does not reopen traffic. Protected runtime projections, partial installations and server deployments retain their full controlled maintenance workflow. File recovery does not establish database recovery qualification.
 
