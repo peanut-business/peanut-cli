@@ -88,7 +88,7 @@ peanut release --with-local-core
 
 输出为“解析后的输出根/<版本>/{standalone,multi-tenant}”；仅当输出根为相对路径时才拼接 Code 根。本地 Core 配置目录不会自动随包携带；前端依赖采用 Core 构建库模式。CLI负责参数、环境调用、输出核对和原子采用；Code既有`prepare-product-release-candidate`负责输入准备、Core冻结/锁投影、依赖与API/inventory生成，`build-scaffold-release`负责Edition封装。环境未变时日常只需`peanut release`，不发布或部署。
 
-本次可变工作区位于Code `.local/release/build-*/`，正常结束清理；最终输出同卷暂存仅在输出根短暂使用`.<版本>.stage-*`，覆盖恢复临时使用`.<版本>.previous-*`。配置仍位于`.local/toolchain`。源码过滤由Code的`scripts/scaffold-runtime/source-snapshot-policy.json`唯一登记，PHP与CLI升级本地源码摘要同读；未登记配置的本地源码输入明确失败，不用CLI内置规则替代。既有模板归档仍按其固定manifest、来源证明和原生升级器读取，不改写历史制品。
+本次可变工作区位于Code `.local/release/build-*/`，正常结束清理；最终输出同卷暂存仅在输出根短暂使用`.<版本>.stage-*`，覆盖恢复临时使用`.<版本>.previous-*`。本机工具配置仍位于`.local/toolchain`。模板声明统一由Code的`scripts/scaffold-runtime/scaffold.conf.json`登记：源码过滤与交付排除分开，文件映射、归属、profile、既有transform选择及文本替换由Code展开和执行；CLI仅读取其中的`source_snapshot`计算升级本地源码摘要。未登记配置的本地源码输入明确失败，不用CLI内置规则替代。配置原样进入APP受管载荷；既有归档仍按固定manifest、来源证明和原生升级器读取，不改写历史制品。
 
 ## 5. 创建应用：create
 
