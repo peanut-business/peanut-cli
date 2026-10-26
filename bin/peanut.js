@@ -42,7 +42,7 @@ function usage(topic = null) {
             + '  --extra-path <目录>              追加命令搜索目录，可重复\n'
             + '  --watch-path <路径>              登记环境指纹观察路径，可重复\n\n'
             + '  --yes                           确认保存预览中的配置并执行 project-env prepare；非交互使用时必须显式指定。默认先完整预览并询问，拒绝时不写入。\n\n'
-            + '不指定工具时从 PATH 和常见安装目录发现。多个候选会提示选择；推荐版本差异只提示，manifest/平台及原生锁的实际兼容约束仍按 project-env 检查。npm/pnpm 使用同一所选 Node，Composer 使用所选 PHP。Core 工具要求分别从各自 composer.json/package.json 读取；不要求 Core 仓库包含 tools/toolchain.json 或 project-env。Core 源码目录只读，独立配置保存在 Code .local/toolchain/cores/<php|web>/host.json。\n',
+            + '工具优先级：显式参数 > 已保存的有效绑定 > 自动发现；已有 host 中未改动的工具及路径设置会复用，不重复选择。失效绑定会报错，不静默改选。多个发现候选会提示选择；推荐版本差异只提示，manifest/平台及原生锁的实际兼容约束仍按 project-env 检查。npm/pnpm 使用同一所选 Node，Composer 使用所选 PHP。Core 工具要求分别从各自 composer.json/package.json 读取；不要求 Core 仓库包含 tools/toolchain.json 或 project-env。Core 源码目录只读，独立配置保存在 Code .local/toolchain/cores/<php|web>/host.json。\n',
         );
         return;
     }
@@ -89,7 +89,7 @@ function usage(topic = null) {
         + '       peanut recipe add app-ci|scaffold-ci [--path <repository>]\n'
         + '路径规则：config/release 的路径参数可用相对或绝对路径；相对路径均以所选项目根为基准。\n'
         + 'config 配置已安装工具并写入项目 .local/toolchain/host.json，不安装软件、不修改全局 PATH。缺省从 PATH 和常见安装目录发现工具；多个版本会交互选择，并显示推荐版本与实际版本差异。\n'
-        + 'config 参数：--path 项目根；--php/--node/--npm/--pnpm/--composer/--python 指定对应可执行文件；--core-php/--core-web 指定本地 Core 仓库；--release/--backups 设置发行与备份目录；--pnpm-cache/--npm-cache/--composer-cache 设置缓存；--extra-path/--watch-path 可重复指定搜索与观察路径。未指定工具路径时自动发现。详见 peanut help config。\n'
+        + 'config 参数：--path 项目根；--php/--node/--npm/--pnpm/--composer/--python 指定对应可执行文件；--core-php/--core-web 指定本地 Core 仓库；--release/--backups 设置发行与备份目录；--pnpm-cache/--npm-cache/--composer-cache 设置缓存；--extra-path/--watch-path 可重复指定搜索与观察路径。优先级为显式参数 > 已保存的有效配置 > 自动发现；未改动的配置直接复用，不重复选择。详见 peanut help config。\n'
         + 'release 参数：--path 脚手架项目根（默认当前目录）；--version 指定版本，必须等于 release-versions.json.scaffold_template；--core-php/--core-web 固定已发行 Core 版本；--with-local-core 使用 config 选择的本地 Core 快照；--output 指定发行根；--overwrite 仅允许覆盖该版本可识别的脚手架产物，遇到未知文件拒绝。\n'
         + 'release 默认输出到项目 ./release/<版本>/standalone 和 multi-tenant；不会自动递增版本。\n'
         + 'Interactive create prompts for an Edition when --edition is omitted; non-interactive create requires --edition.\n'
