@@ -136,9 +136,14 @@ jobs:
           flags=()
           prerelease=false
           if [[ "$GITHUB_REF_NAME" == *-rc.* ]]; then flags+=(--prerelease); prerelease=true; fi
-          if gh release view "$GITHUB_REF_NAME" --json tagName,isDraft,isPrerelease,assets > "$RUNNER_TEMP/github-release.json" 2>/dev/null; then
+          release_status=$(curl --silent --show-error --connect-timeout 30 --max-time 120 \
+            --output "$RUNNER_TEMP/github-release.json" --write-out '%{http_code}' \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            --header 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/$GH_REPO/releases/tags/$GITHUB_REF_NAME")
+          if [[ "$release_status" == 200 ]]; then
             jq -e --arg tag "$GITHUB_REF_NAME" --arg tarball "$CLI_TARBALL" --argjson prerelease "$prerelease" \
-              '.tagName == $tag and .isDraft == false and .isPrerelease == $prerelease and ([.assets[].name] | sort) == ([$tarball, "cli-release-source.json"] | sort)' \
+              '.tag_name == $tag and .draft == false and .prerelease == $prerelease and ([.assets[].name] | sort) == ([$tarball, "cli-release-source.json"] | sort)' \
               "$RUNNER_TEMP/github-release.json" >/dev/null
             mkdir "$RUNNER_TEMP/existing-release"
             gh release download "$GITHUB_REF_NAME" --pattern "$CLI_TARBALL" --pattern cli-release-source.json --dir "$RUNNER_TEMP/existing-release"
@@ -146,6 +151,10 @@ jobs:
             cmp "$RUNNER_TEMP/cli-release-source.json" "$RUNNER_TEMP/existing-release/cli-release-source.json"
             echo 'Existing GitHub Release assets exactly match this fixed source' | tee -a "$GITHUB_STEP_SUMMARY"
             exit 0
+          fi
+          if [[ "$release_status" != 404 ]]; then
+            echo "GitHub Release lookup failed: HTTP $release_status; creation was not attempted" >&2
+            exit 1
           fi
           gh release create "$GITHUB_REF_NAME" --verify-tag "${flags[@]}" \
             "$RUNNER_TEMP/$CLI_TARBALL" "$RUNNER_TEMP/cli-release-source.json" \
