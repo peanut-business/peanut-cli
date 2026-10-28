@@ -17,7 +17,7 @@ npm install -g .
 npm install -g /path/to/peanut-cli-X.Y.Z.tgz
 ```
 
-按命令操作对象选择工作目录：`config` 和 `release` 使用选定的 Peanut Admin Code 根；`doctor`、`status`、`upgrade`、`recipe` 使用对应 APP 或脚手架根；`create` 的第一个参数是新目标目录。支持 `--path` 的命令可用它选择根目录；它自身相对当前目录解析，config/release 的其他路径相对选定 Code 根解析。临时 worktree 是独立根。普通用户运行已安装的 `peanut`；CLI 内部调用 Code 的 `scripts/project-env` 和 `scripts/build-scaffold-release`，不直接运行 CLI 源码仓 `bin/peanut.js`。
+按命令操作对象选择工作目录：`config` 使用选定的 Peanut Admin Code 或生成 APP 根，`release` 使用 Code 根；`doctor`、`status`、`upgrade`、`recipe` 使用对应 APP 或脚手架根；`create` 的第一个参数是新目标目录。支持 `--path` 的命令可用它选择根目录；它自身相对当前目录解析，config/release 的其他路径相对选定项目根解析。临时 worktree 是独立根。普通用户运行已安装的 `peanut`；CLI 内部调用所选项目的 `scripts/project-env`，制包调用 Code 的 `scripts/build-scaffold-release`，不直接运行 CLI 源码仓 `bin/peanut.js`。
 
 CLI 安装和环境配置是首次准备。环境与路径不变时，日常生成脚手架只需 `peanut release`，无需手动 prepare/install/hash。
 
@@ -57,9 +57,9 @@ peanut config --path /absolute/peanut-admin-code --yes
 
 | 参数 | 取值 | 默认或复用 | 作用 |
 | --- | --- | --- | --- |
-| `--path` | Code 根目录 | 当前目录 | 选择配置项目；自身相对当前目录解析 |
+| `--path` | Code 或生成 APP 根目录 | 当前目录 | 选择配置项目；自身相对当前目录解析 |
 | `--php`, `--node`, `--npm`, `--pnpm`, `--composer`, `--python` | 已安装工具路径 | 显式参数 > 有效配置 > 自动发现 | 选择本机工具；首次配置 Core 时沿用本项目已选择的工具；已有 Core 配置时保留其已选工具 |
-| `--core-php`, `--core-web` | 本地 Core 源码目录（可相对所选 Code 根） | 有效配置或邻接发现 | 始终保存绝对路径，固定绑定实际 Core 位置，避免 Code 工作目录变化后按另一基准解析；`.local` 配置不随 Git 合并，新工作区须重新运行 `config`；不会因此自动随发行包携带 |
+| `--core-php`, `--core-web` | 本地 Core 源码目录（可相对所选项目根） | 显式参数 > 已保存选择（含 `null`）；Code 可邻接发现 | 始终保存绝对路径，固定绑定实际 Core 位置；生成 APP 默认不发现相邻源码仓，使用模板锁定的 Core 依赖；显式选择源码可用于联合开发 |
 | `--release`, `--backups` | 路径 | release=`release`；backups 初次=`../backups` | 保存发行输出根和备份位置；已有值继续复用 |
 | `--release-database-registry`, `--release-database-resource`, `--release-database-sql` | 绝对登记文件、稳定资源 ID、绝对 `.sql` 文件 | 默认关闭；启用后三项复用 | 可选维护配置，制包前导出开发库快照；登记及 SQL 位于 Code 源码外，SQL 不进入模板 |
 | `--no-release-database-backup` | 开关 | 默认保留现有选择 | 清除已保存的数据库备份配置；不删除已有快照 |
@@ -68,6 +68,8 @@ peanut config --path /absolute/peanut-admin-code --yes
 | `--yes` | 开关 | 默认预览后询问 | 自动确认写入并执行 prepare；不是只读，也不代替工具选择 |
 
 配置保存在 Code `.local/toolchain/host.json`；Core 各自配置在 `.local/toolchain/cores/<php|web>/host.json`。
+
+生成 APP 同样使用自身 `.local/toolchain/host.json`。存在 `.peanut/application-manifest.json` 时，首次配置不会因目录相邻而绑定 PHP/Web Core 源码；默认继续采用模板锁定的依赖及包内冻结归档。需要源码联合开发时显式传入 `--core-php` / `--core-web`，配置只记录选择并准备工具环境，不自动链接依赖。已保存的选择继续复用，`core.php` / `core.web` 为 `null` 表示不绑定对应源码。
 
 ## 4. 生成脚手架：release
 
