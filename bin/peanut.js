@@ -22,7 +22,7 @@ function usage(topic = null) {
         process.stdout.write(
             '用法：peanut config [选项]\npeanut help config\n\n'
             + '为当前 Peanut Admin Code 项目选择本机已安装工具，并写入忽略目录 .local/toolchain/host.json；随后调用现有 scripts/project-env prepare。不会安装软件或修改全局 PATH。\n\n'
-            + '路径基准：--path 自身相对当前工作目录解析；其余路径及 Core host 中的 commands/caches/extra_path/watch_paths 相对所选 Code 根。Core 目录可相对 Code 根输入，配置始终保存绝对路径；.local 配置不随 Git 合并，新工作区或目录位置变化后须重新 config 并指定当前 Core 位置。\n\n'
+            + '路径基准：--path 自身相对当前工作目录解析；其余工具路径及 Core host 中的 commands/caches/extra_path/watch_paths 相对所选 Code 根。维护数据库登记和 SQL 快照只接受绝对路径。Core 目录可相对 Code 根输入，配置始终保存绝对路径；.local 配置不随 Git 合并，新工作区或目录位置变化后须重新 config 并指定当前 Core 位置。\n\n'
             + '选项：\n'
             + '  --path <目录>                   Code 项目根，默认当前目录\n'
             + '  --php <文件>                    PHP 可执行文件\n'
@@ -35,6 +35,10 @@ function usage(topic = null) {
             + '  --core-web <目录>               本地 Web Core 源码目录\n'
             + '  --release <路径>                release 输出根，默认 release\n'
             + '  --backups <路径>                backups 目录，首次默认 ../backups\n'
+            + '  --release-database-registry <绝对文件>  可选维护数据库登记，与下两项配套\n'
+            + '  --release-database-resource <ID>       维护数据库稳定资源 ID\n'
+            + '  --release-database-sql <绝对文件>       制包前原生 SQL 快照，必须在源码与制品外\n'
+            + '  --no-release-database-backup           关闭此前保存的制包数据库备份\n'
             + '  --pnpm-cache <路径>              pnpm 缓存目录\n'
             + '  --npm-cache <路径>               npm 缓存目录\n'
             + '  --composer-cache <路径>          Composer 缓存目录\n'
@@ -65,7 +69,7 @@ function usage(topic = null) {
             + '  --internal-core-inputs <回执>      消费固定内部候选的 Core 冻结回执；必须与该候选工作流组合使用\n'
             + '  --api-tool-root <目录>             固定 CI/API 工具入口根目录\n'
             + '高级选项用于已固定输入的维护流水线，普通本地发行无需填写；互斥或不完整组合会拒绝。\n\n'
-            + 'Core 默认选择最新正式稳定版；PHP 与 Web 版本独立，Web 六包保持同版。最终目录为 <output>/<版本>/standalone 和 multi-tenant。已存在同版本目录默认拒绝。host.paths.backups 仅保存备份路径配置，不会新增备份流程。Core 选择、来源和摘要写入包清单；默认不携带 Core 归档。此命令不发布或部署。\n',
+            + 'Core 默认选择最新正式稳定版；PHP 与 Web 版本独立，Web 六包保持同版。最终目录为 <output>/<版本>/standalone 和 multi-tenant。已存在同版本目录默认拒绝。可选 release_database_backup 维护配置启用后，在准备/双 Edition 制包前只导出一次原生 SQL；失败即停止，旧快照保存在 paths.backups，SQL 不进入应用包。必须提供当前原生资源租约，默认关闭。Core 选择、来源和摘要写入包清单；默认不携带 Core 归档。此命令不发布或部署。\n',
         );
         return;
     }
@@ -259,6 +263,8 @@ async function main() {
             ['--release', 'releasePath'], ['--backups', 'backupsPath'], ['--pnpm-cache', 'pnpmCache'],
             ['--npm-cache', 'npmCache'], ['--composer-cache', 'composerCache'], ['--extra-path', 'extraPaths'],
             ['--watch-path', 'watchPaths'], ['--yes', 'yes'],
+            ['--release-database-registry', 'releaseDatabaseRegistry'], ['--release-database-resource', 'releaseDatabaseResource'],
+            ['--release-database-sql', 'releaseDatabaseSql'], ['--no-release-database-backup', 'noReleaseDatabaseBackup'],
         ]);
         for (let index = 0; index < raw.length; index += 1) {
             const split = raw[index].indexOf('=');
@@ -266,9 +272,9 @@ async function main() {
             if (['--help', '-h'].includes(flag)) { usage('config'); return 0; }
             const key = allowed.get(flag);
             if (key === undefined) throw new Error('PEANUT_CONFIG_ARGUMENTS_INVALID');
-            if (key === 'yes') {
+            if (key === 'yes' || key === 'noReleaseDatabaseBackup') {
                 if (split !== -1 || Object.hasOwn(options, key)) throw new Error('PEANUT_CONFIG_ARGUMENTS_INVALID');
-                options.yes = true;
+                options[key] = true;
                 continue;
             }
             const value = split < 0 ? (raw[++index] ?? '') : raw[index].slice(split + 1);

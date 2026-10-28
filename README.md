@@ -61,6 +61,8 @@ peanut config --path /absolute/peanut-admin-code --yes
 | `--php`, `--node`, `--npm`, `--pnpm`, `--composer`, `--python` | 已安装工具路径 | 显式参数 > 有效配置 > 自动发现 | 选择本机工具；首次配置 Core 时沿用本项目已选择的工具；已有 Core 配置时保留其已选工具 |
 | `--core-php`, `--core-web` | 本地 Core 源码目录（可相对所选 Code 根） | 有效配置或邻接发现 | 始终保存绝对路径，固定绑定实际 Core 位置，避免 Code 工作目录变化后按另一基准解析；`.local` 配置不随 Git 合并，新工作区须重新运行 `config`；不会因此自动随发行包携带 |
 | `--release`, `--backups` | 路径 | release=`release`；backups 初次=`../backups` | 保存发行输出根和备份位置；已有值继续复用 |
+| `--release-database-registry`, `--release-database-resource`, `--release-database-sql` | 绝对登记文件、稳定资源 ID、绝对 `.sql` 文件 | 默认关闭；启用后三项复用 | 可选维护配置，制包前导出开发库快照；登记及 SQL 位于 Code 源码外，SQL 不进入模板 |
+| `--no-release-database-backup` | 开关 | 默认保留现有选择 | 清除已保存的数据库备份配置；不删除已有快照 |
 | `--pnpm-cache`, `--npm-cache`, `--composer-cache` | 路径 | `.local/toolchain/cache/<tool>` | 设置工具缓存位置 |
 | `--extra-path`, `--watch-path` | 路径，可重复 | 未指定时复用已存值 | 显式指定额外搜索目录或观察路径列表 |
 | `--yes` | 开关 | 默认预览后询问 | 自动确认写入并执行 prepare；不是只读，也不代替工具选择 |
@@ -86,6 +88,8 @@ peanut release --with-local-core
 | `--overwrite` | 开关 | 已有版本默认拒绝 | 原位替换已知产物；存在未知内容时拒绝 |
 
 输出为“解析后的输出根/<版本>/{standalone,multi-tenant}”；仅当输出根为相对路径时才拼接 Code 根。本地 Core 配置目录不会自动随包携带；前端依赖采用 Core 构建库模式。CLI负责参数、环境调用、输出核对和原子采用；Code既有`prepare-product-release-candidate`负责输入准备、Core冻结/锁投影、依赖与API/inventory生成，`build-scaffold-release`负责Edition封装。环境未变时日常只需`peanut release`，不发布或部署。
+
+可选维护备份保存在私有 `host.json.release_database_backup`（`registry`、`resource_id`、`output`），不依赖任何固定私有仓库路径。启用后，CLI 在默认源码准备或固定 Git 制包之前调用 Code `scripts/export-release-database` 一次，两 Edition 共用该快照；失败即停止。进程须已有当前 Code candidate 的 `PEANUT_RESOURCE_LEASE_PROOF`，包含完整库 exclusive 声明，以及 SQL 父目录和 `<paths.backups>/database/release` 两个 `output-dir`。SQL 使用登记远端容器内的原生 mysqldump；旧文件保全后原子替换，旁边 `.sql.json` 记录摘要和来源。SQL 与 receipt 不进入应用模板或发行附件；完整快照可能包含业务秘密，只能在合适的私有备份仓库管理，CLI 不自动提交或推送 Git。`build-scaffold-release --check` 不触发备份。
 
 本次可变工作区位于Code `.local/release/build-*/`，正常结束清理；最终输出同卷暂存仅在输出根短暂使用`.<版本>.stage-*`，覆盖恢复临时使用`.<版本>.previous-*`。本机工具配置仍位于`.local/toolchain`。模板声明统一由Code的`scripts/scaffold-runtime/scaffold.conf.json`登记：源码过滤与交付排除分开，文件映射、归属、profile、既有transform选择及文本替换由Code展开和执行；CLI仅读取其中的`source_snapshot`计算升级本地源码摘要。未登记配置的本地源码输入明确失败，不用CLI内置规则替代。配置原样进入APP受管载荷；既有归档仍按固定manifest、来源证明和原生升级器读取，不改写历史制品。
 
