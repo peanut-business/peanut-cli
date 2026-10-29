@@ -13,11 +13,22 @@ import { buildProject, parseBuildArguments } from '../lib/build-project.js';
 import { upgradeProject } from '../lib/upgrade-project.js';
 import { parseCollaborationArguments, serviceCollaboration } from '../lib/service-collaboration.js';
 import { configureProject } from '../lib/configure.js';
+import { MODULE_OPERATIONS, parseModuleArguments, runModule } from '../lib/module.js';
 
 const toolRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const CLI_VERSION = readJsonObject(path.join(toolRoot, 'package.json')).version;
 
 function usage(topic = null) {
+    if (topic === 'module') {
+        process.stdout.write(
+            '用法：peanut module <operation> [参数] [--root <APP目录>]\npeanut help module\n\n'
+            + `操作：${MODULE_OPERATIONS.join(', ')}\n\n`
+            + '默认在当前 APP 根执行；--root 自身相对当前工作目录解析。其余参数原样传给 APP 模块入口，操作参数帮助使用 peanut module <operation> --help。\n'
+            + '复用 APP scripts/project-env 和 .local/toolchain/host.json 中选择的 PHP，通过 JSON stdin 调用 server/module，无需启动 HTTP 服务。首次使用先运行 peanut config。\n'
+            + '模块包默认输出至 APP 配置 paths.release 下的 modules（默认 release/modules）；相对发行路径以 APP 根解析。操作结果和退出码由 APP 返回。\n',
+        );
+        return;
+    }
     if (topic === 'config') {
         process.stdout.write(
             '用法：peanut config [选项]\npeanut help config\n\n'
@@ -76,7 +87,8 @@ function usage(topic = null) {
     process.stdout.write(
         `Peanut CLI ${CLI_VERSION}\n`
         + 'Usage: peanut <command> [options]\n'
-        + '       peanut help [config|release]\n'
+        + '       peanut help [config|release|module]\n'
+        + '       peanut module <operation> [args] [--root <application>]\n'
         + '       peanut config [--path <project-root>] [--php <path>] [--node <path>] [--npm <path>] [--pnpm <path>] [--composer <path>] [--python <path>] [--core-php <path>] [--core-web <path>] [--release <path>] [--backups <path>] [--pnpm-cache <path>] [--npm-cache <path>] [--composer-cache <path>] [--extra-path <path>]... [--watch-path <path>]... [--yes]\n'
         + 'Usage: peanut create <absolute-target> --name <name> --slug <slug> --package <vendor/name> [--edition standalone|multi-tenant] [--application-version <semver>] [--ref <version>] [--channel stable|prerelease]\n'
         + '       peanut create <absolute-target> --name <name> --slug <slug> --package <vendor/name> --edition standalone|multi-tenant --archive <absolute-template.tgz> --manifest <absolute-template.json>\n'
@@ -227,9 +239,17 @@ function parseUpgradeArguments(raw) {
 async function main() {
     if (process.argv[2] === 'help') {
         const topic = process.argv[3];
-        if (process.argv.length > 4 || (topic && !['config', 'release'].includes(topic))) throw new Error('PEANUT_HELP_TOPIC_INVALID');
+        if (process.argv.length > 4 || (topic && !['config', 'release', 'module'].includes(topic))) throw new Error('PEANUT_HELP_TOPIC_INVALID');
         usage(topic);
         return 0;
+    }
+    if (process.argv[2] === 'module') {
+        const raw = process.argv.slice(3);
+        if (raw.length === 0 || (raw.length === 1 && ['--help', '-h'].includes(raw[0]))) {
+            usage('module');
+            return 0;
+        }
+        return runModule(parseModuleArguments(raw));
     }
     if (process.argv[2] === 'release') {
         if (process.argv.slice(3).some((item) => ['--help', '-h'].includes(item))) { usage('release'); return 0; }

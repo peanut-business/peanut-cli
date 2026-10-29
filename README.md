@@ -1,6 +1,6 @@
 # Peanut CLI
 
-Peanut CLI 是独立版本的 `peanut` 命令行工具，负责 Peanut 应用模板、环境配置、诊断、升级和 Recipe 管理。
+Peanut CLI 是独立版本的 `peanut` 命令行工具，负责 Peanut 应用模板、环境配置、诊断、升级、模块工程和 Recipe 管理。
 
 ## 1. 安装与工作目录
 
@@ -42,10 +42,26 @@ peanut recipe add scaffold-ci --path /absolute/peanut-admin-code
 | `release` | 生成 Standalone、Multi-tenant 脚手架包 |
 | `create` | 从官方模板或本地归档创建应用 |
 | `upgrade` | 检查、规划、应用或恢复模板升级 |
+| `module <operation>` | 使用 APP 已配置的 PHP 执行模块工程与生命周期操作 |
 | `doctor`, `status` | 诊断或查看应用状态 |
 | `recipe list` | 列出可用 Recipe |
 | `recipe status [id]` | 查看全部或指定 Recipe 状态 |
 | `recipe add <id>` | 安装指定 Recipe |
+
+### 模块工程：module
+
+```sh
+peanut help module
+peanut module check --root /absolute/app
+peanut module create --help --root /absolute/app
+peanut module pack --help --root /absolute/app
+```
+
+公开入口为 `peanut module <operation> [参数] [--root <APP目录>]`，支持 `create`、`check`、`compile`、`pack`、`bundle-pack`、`adopt`、`install`、`upgrade`、`disable`、`uninstall`、`sync`、`reconcile`、`make`、`lock`、`release-composition`。默认使用当前目录作为 APP 根；`--root` 可用相对或绝对路径，自身相对当前工作目录解析。CLI 只消费 `--root`，其余参数按原顺序交给 APP；`--` 后的全部参数直接传递。各操作参数以 `peanut module <operation> --help` 为准。
+
+首次运行先用 `peanut config --path /absolute/app` 配置工具。模块命令通过 APP 的 `scripts/project-env` 选择 PHP，执行内部 `server/module`，以 stdin JSON `{ "operation": "check", "arguments": [] }` 传参；无需 HTTP 或启动站点。APP 的 stdout、stderr 与退出码直接返回，失败不会包装成成功。
+
+模块包默认输出到 APP `.local/toolchain/host.json` 的 `paths.release` 下的 `modules`，未配置发行路径时为 APP `release/modules`；相对发行路径以 APP 根解析。操作支持的显式输出参数由 APP 处理，CLI 不依赖私有工作区路径或 Project 仓库。
 
 ## 3. 配置环境：config
 
