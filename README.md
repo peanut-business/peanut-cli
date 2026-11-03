@@ -23,6 +23,8 @@ CLI 安装和环境配置是首次准备。环境与路径不变时，日常生�
 
 模板供 `create` / `upgrade` 消费。产品在自己的 Git `dev` 开发，人工审核后定版到 `main` 及 tag；生产采用固定 main 提交，见[产品 Git 交付合同](https://github.com/peanut-business/peanut-admin-code/blob/dev/docs/public/application-release.md)。B 包、`peanut package` 和 `release/apps` 已退役；Recipe 保留独立入口。
 
+创建应用可显式使用 `--demo=workbench` 选择工作台演示数据，默认 `--demo=none`。选择记录在应用manifest与自有配置中，由正常首次安装写入数据；create本身不连接数据库，升级不隐式播种。旧模板不支持该preset时明确拒绝workbench选择。
+
 ## 2. 命令速查
 
 ```sh

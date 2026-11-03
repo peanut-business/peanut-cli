@@ -109,6 +109,7 @@ function usage(topic = null) {
         + 'release 默认输出到项目 ./release/<版本>/standalone 和 multi-tenant；不会自动递增版本。\n'
         + 'Interactive create prompts for an Edition when --edition is omitted; non-interactive create requires --edition.\n'
         + 'Edition, profile and workflow are fixed by the selected template package; an explicit mismatch is refused.\n'
+        + 'Create --demo none|workbench defaults to none; the selection is recorded and workbench data is seeded only during first installation.\n'
         + 'Standalone and multi-tenant are separate application artifacts and deployments; normal upgrades remain within the same Edition.\n'
         + 'Create defaults to the latest official stable template attachment. Local archives require their paired manifest. No Git clone, PHP, dependency installation, database or service operation occurs. Target must be absent or strictly empty, including hidden files.\n'
         + 'Fixed-release APP discovery stays within the current major; development APP checks the latest published release. Applying a development source transition requires explicit --ref.\n'
@@ -154,7 +155,7 @@ function parseCreateArguments(raw) {
     const values = {};
     const map = new Map([
         ['--name', 'name'], ['--slug', 'slug'], ['--package', 'package'], ['--edition', 'edition'],
-        ['--profile', 'profile'], ['--workflow', 'workflow'], ['--application-version', 'applicationVersion'],
+        ['--profile', 'profile'], ['--workflow', 'workflow'], ['--demo', 'demo'], ['--application-version', 'applicationVersion'],
         ['--archive', 'archive'], ['--manifest', 'manifest'], ['--ref', 'ref'], ['--channel', 'channel'],
     ]);
     for (let index = 1; index < raw.length; index += 1) {
@@ -169,6 +170,9 @@ function parseCreateArguments(raw) {
     }
     if (values.workflow !== undefined && !['none', 'runtime', 'full'].includes(values.workflow)) {
         throw new Error('PEANUT_CREATE_WORKFLOW_INVALID');
+    }
+    if (values.demo !== undefined && !['none', 'workbench'].includes(values.demo)) {
+        throw new Error('PEANUT_CREATE_DEMO_INVALID');
     }
     return { target, ...values };
 }
