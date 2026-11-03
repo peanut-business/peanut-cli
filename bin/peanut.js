@@ -381,7 +381,7 @@ async function main() {
     };
     for (const file of [
         'server/composer.json', 'server/composer.lock', 'web/package.json', 'web/pnpm-lock.yaml',
-        'plugins.lock', 'RELEASE_METADATA.json', 'resources/project-resources.json',
+        'modules.lock', 'RELEASE_METADATA.json', 'resources/project-resources.json',
         'scripts/project-composer', 'scripts/upgrade',
     ]) {
         const target = projectPath(root, file);

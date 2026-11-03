@@ -53,7 +53,7 @@ export function fixture(t, mutate = () => {}, extraMembers = []) {
     const create = { schema_version: 1, protocol: 'peanut.template-create.v1', tokens, application_manifest: app,
         files, directories: ['server/runtime/cache'], scaffold_manifest_sha256: sha256(encode(release)),
         derived: { composer_lock: 'server/composer.lock', api_catalog: 'server/generated/api-catalog.json' } };
-    mutate({ create, release, app, files });
+    mutate({ create, release, app, files, payload });
     const createBytes = encode(create), releaseBytes = encode(release);
     const packed = archive([['template-create.json', createBytes], ['scaffold-manifest.json', releaseBytes],
         ...files.map((file) => [file.source, payload.get(file.path), file.mode]), ...extraMembers]);

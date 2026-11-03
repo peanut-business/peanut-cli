@@ -6,6 +6,29 @@ import path from 'node:path';
 import { archive, fixture } from './helpers/template-fixture.js';
 import { createProject } from '../lib/create-project.js';
 import { readTemplateArchive } from '../lib/template-package.js';
+
+test('Module lock is frozen independently of application branding', async (t) => {
+    for (const mutable of [false, true]) {
+        const { root, options } = fixture(t, ({ create, release, app, files, payload }) => {
+            const bytes = Buffer.from('{"schema_version":1,"modules":[]}\n');
+            payload.set('modules.lock', bytes);
+            const entry = { path: 'modules.lock', source: 'files/modules.lock', mode: 0o644,
+                classification: 'generated-managed', sha256: sha256(bytes), render: mutable };
+            files.push(entry);
+            const { source, render, ...recorded } = entry;
+            app.files.push(recorded);
+            release.files.push({ ...entry, template_sha256: entry.sha256 });
+            create.scaffold_manifest_sha256 = sha256(Buffer.from(JSON.stringify(release, null, 4) + '\n'));
+        });
+        if (mutable) {
+            await assert.rejects(createProject(options), /MODULE_IDENTITY_MUTABLE/);
+            assert.equal(fs.existsSync(options.target), false);
+        } else {
+            await createProject(options);
+            assert.deepEqual(JSON.parse(fs.readFileSync(path.join(options.target, 'modules.lock'))), { schema_version: 1, modules: [] });
+        }
+    }
+});
 import { sha256 } from '../lib/protocol.js';
 
 test('archive creation accepts absent and strictly empty targets with native-compatible baselines', async (t) => {
