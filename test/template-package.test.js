@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { archive, fixture } from './helpers/template-fixture.js';
+import { archive, fixture, officialFixture } from './helpers/template-fixture.js';
 import { createProject } from '../lib/create-project.js';
 import { readTemplateArchive } from '../lib/template-package.js';
 
@@ -79,26 +79,16 @@ test('self-consistent package with false source identity is rejected before stag
 });
 
 test('official stable creation uses exact Edition attachments and records the published source', async (t) => {
-    const { options } = fixture(t);
-    const metadata = fs.readFileSync(options.manifest);
-    const payload = fs.readFileSync(options.archive);
-    delete options.manifest;
-    delete options.archive;
-    const prefix = 'https://github.com/peanut-business/peanut-admin-code/releases/download/v5.0.2/';
-    const urls = [];
-    const fetcher = async (url) => {
-        urls.push(url);
-        if (url.endsWith('/releases/latest')) return Response.json({ tag_name: 'v5.0.2', draft: false, prerelease: false,
-            assets: ['json', 'tgz'].map((ext) => ({ name: `peanut-scaffold-standalone.${ext}`,
-                browser_download_url: prefix + `peanut-scaffold-standalone.${ext}` })) });
-        if (url === prefix + 'peanut-scaffold-standalone.json') return new Response(metadata);
-        if (url === prefix + 'peanut-scaffold-standalone.tgz') return new Response(payload);
-        throw new Error('Unexpected source: ' + url);
-    };
-    const result = await createProject(options, fetcher);
+    const f = officialFixture(t);
+    const result = await createProject(f.options, f.fetcher);
     assert.equal(result.source.channel, 'stable');
     assert.equal(result.source.release_version, '5.0.2');
     assert.equal(result.source.requested_ref, 'v5.0.2');
     assert.equal(result.package.source, 'official');
-    assert.equal(urls.length, 3);
+    const prefix = 'https://github.com/peanut-business/peanut-admin-code/releases/download/v5.0.2/';
+    for (const name of ['RELEASE_MANIFEST.json', 'RELEASE_CANDIDATE_LOCK.json',
+        'peanut-scaffold-standalone.json', 'peanut-scaffold-standalone.tgz']) {
+        assert.equal(f.calls.filter((url) => url === prefix + name).length, 1);
+    }
+    assert.equal(f.calls.length, 5);
 });

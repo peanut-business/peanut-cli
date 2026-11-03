@@ -35,7 +35,7 @@ test('official create keeps explicit refs exact and prerelease discovery bound o
         await createProject({ ...f.options, channel: 'prerelease', ...(ref ? { ref } : {}) }, f.fetcher);
         const discovery = f.calls.filter((url) => url.startsWith('https://api.github.com/'));
         assert.equal(discovery.length, 1);
-        assert.match(discovery[0], ref ? /\/tags\/v5\.0\.2-rc\.1$/ : /\?per_page=100$/);
+        assert.match(discovery[0], ref ? /\/tags\/v5\.0\.2-rc\.1$/ : /\?per_page=100&page=1$/);
     }
     const f = officialFixture(t);
     const calls = [];
