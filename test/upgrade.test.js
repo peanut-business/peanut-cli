@@ -135,8 +135,10 @@ async function developmentFixture(t) {
     const manifestPath = path.join(f.options.target, '.peanut/application-manifest.json');
     const current = JSON.parse(fs.readFileSync(manifestPath));
     const useBase = (application, source) => {
-        Object.assign(application.generation_source, source, { requested_ref: 'local:' + '1'.repeat(64) });
-        Object.assign(application.template, { source_commit: source.commit, source_tree: source.tree, inventory_sha256: source.inventory_sha256 });
+        const identity = { kind: 'git', commit: source.commit, tree: source.tree };
+        Object.assign(application.generation_source, source, { requested_ref: 'local:' + '1'.repeat(64), source_identity: identity });
+        Object.assign(application.template, { source_commit: source.commit, source_tree: source.tree,
+            inventory_sha256: source.inventory_sha256, source_identity: identity });
         application.edition.source_sha256 = source.edition_profile_sha256;
         return application;
     };

@@ -138,7 +138,8 @@ function createFixture(t) {
             edition: 'standalone',
             profile: 'minimal',
         },
-        template: { version: '4.0.0-rc.3' },
+        template: { version: '4.0.0-rc.3', source_commit: 'a'.repeat(40), source_tree: 'b'.repeat(40) },
+        generation_source: { commit: 'a'.repeat(40), tree: 'b'.repeat(40) },
         files: [],
     };
     const saveManifest = () => {
