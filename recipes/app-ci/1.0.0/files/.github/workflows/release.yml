@@ -1,4 +1,4 @@
-name: Application Release candidate
+name: Application server-only Release candidate
 
 # Explicit candidate preparation; publication requires the application's release gate.
 on:
@@ -19,6 +19,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
       - uses: shivammathur/setup-php@v2
         with:
           php-version: '8.3'
@@ -33,7 +34,7 @@ jobs:
         with:
           node-version: '22.23.2'
       - name: Prepare the committed APP through its existing release engine
-        run: ./scripts/package-release.sh "$RUNNER_TEMP/application-release"
+        run: bash scripts/package-release.sh "$RUNNER_TEMP/application-release" --application-root="$GITHUB_WORKSPACE" --server-only
       - uses: actions/upload-artifact@v4
         with:
           name: application-release-${{ github.sha }}
