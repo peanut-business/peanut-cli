@@ -159,6 +159,7 @@ $variant = ${JSON.stringify(variant)};
 $options = [];
 foreach (array_slice($argv, 2) as $arg) { [$key, $value] = explode('=', substr($arg, 2), 2); $options[$key] = $value; }
 $root = $options['project-root']; $command = $argv[1];
+if ($variant === 'tamper-after-' . $command) file_put_contents(dirname(__DIR__) . '/README.md', 'changed by native command');
 file_put_contents($root . '/consumer-calls.jsonl', json_encode([$command, $options]) . "\\n", FILE_APPEND);
 if ($command === 'template-plan') {
     $app = json_decode(file_get_contents($root . '/.peanut/application-manifest.json'), true);
@@ -227,6 +228,18 @@ exit($plan['status'] === 'blocked' ? 2 : 0);
     fs.writeFileSync(f.options.archive, packed); fs.writeFileSync(f.options.manifest, encode(metadata));
     return f;
 }
+
+test('a native command cannot change the cached package used by the next command', async (t) => {
+    for (const command of ['resolve', 'apply']) {
+        const f = await developmentBindingFixture(t, 'tamper-after-' + command);
+        const planned = await upgradeProject({ ...f.upgrade, plan: true }, offline);
+        await assert.rejects(upgradeProject({ path: f.options.target, applyPlan: planned.plan_path,
+            confirmPlanSha256: planned.plan.plan_sha256, preservePaths: 'README.md', replacePaths: '-' }, offline),
+        /ENGINE_CONTENT_MISMATCH/);
+        const calls = fs.readFileSync(path.join(f.options.target, 'consumer-calls.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+        assert.equal(calls.at(-1)[0], command);
+    }
+});
 
 test('native development binding forwards checkout and retains proof through saved consumers', async (t) => {
     for (const workflowPresent of [true, false]) {

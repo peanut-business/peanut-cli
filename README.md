@@ -57,6 +57,9 @@ peanut help module
 peanut module check --root /absolute/app
 peanut module create --help --root /absolute/app
 peanut module pack --help --root /absolute/app
+peanut module pack peanut.chart --output /absolute/release/modules/peanut.chart-1.0.3.tar --root /absolute/module-app
+peanut module install /absolute/release/modules/peanut.chart-1.0.3.tar --sha256 "$REVIEWED_SHA256" --root /absolute/consumer-app
+peanut module upgrade /absolute/release/modules/peanut.chart-1.0.3.tar --sha256 "$REVIEWED_SHA256" --root /absolute/consumer-app
 ```
 
 公开入口为 `peanut module <operation> [参数] [--root <APP目录>]`，支持 `create`、`check`、`compile`、`pack`、`adopt`、`install`、`upgrade`、`disable`、`uninstall`、`sync`、`reconcile`、`make`、`lock`、`release-composition`。默认使用当前目录作为 APP 根；`--root` 可用相对或绝对路径，自身相对当前工作目录解析。CLI 只消费 `--root`，其余参数按原顺序交给 APP；`--` 后的全部参数直接传递。各操作参数以 `peanut module <operation> --help` 为准。
