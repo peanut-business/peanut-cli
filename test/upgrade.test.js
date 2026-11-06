@@ -116,7 +116,7 @@ async function developmentFixture(t) {
     const profiles = Buffer.from('{"protocol":"peanut.edition-profiles.v1"}\n');
     fs.writeFileSync(path.join(checkout, 'scaffold/edition-profiles.json'), profiles);
     const commit = (revision) => {
-        const inventory = Buffer.from(JSON.stringify({ revision, files: [{ profiles: ['minimal', 'standard', 'full'] }] }) + '\n');
+        const inventory = Buffer.from(JSON.stringify({ revision, files: [{ target: 'README.md', classification: 'managed', profiles: ['minimal', 'standard', 'full'] }] }) + '\n');
         fs.writeFileSync(path.join(checkout, 'scaffold/application-template-inventory.json'), inventory);
         git('add', '--', 'scaffold');
         git('commit', '--quiet', '-m', 'fixed development source ' + revision);
@@ -314,6 +314,24 @@ test('development successor requires explicit fixed ancestry and checks remain r
     assert.equal(retained.source_relation.template_profile, 'full');
     assert.equal(retainedIdentity.application.profile, 'standard');
     assert.equal(Object.hasOwn(retainedIdentity.application, 'workflow'), false);
+    const local = structuredClone(f.current);
+    const localIdentity = { kind: 'local', snapshot_sha256: '1'.repeat(64) };
+    local.generation_source.source_identity = local.template.source_identity = localIdentity;
+    for (const key of ['commit', 'tree', 'repository']) delete local.generation_source[key];
+    delete local.template.source_commit;
+    delete local.template.source_tree;
+    const localResult = await discoverUpgrade(local, f.upgrade, offline);
+    assert.equal(localResult.status, 'available');
+    assert.equal(localResult.source_relation.kind, 'local_snapshot');
+    assert.deepEqual(localResult.source_relation.base, localIdentity);
+    assert.deepEqual(localResult.source_relation.target, { kind: 'git', commit: f.target.commit, tree: f.target.tree });
+    assert.equal(Object.hasOwn(localResult.source_relation.base, 'commit'), false);
+    const changedLocal = structuredClone(local);
+    changedLocal.template.source_identity = { kind: 'local', snapshot_sha256: '2'.repeat(64) };
+    assert.equal((await discoverUpgrade(changedLocal, f.upgrade, offline)).status, 'source_identity_unknown');
+    f.git('remote', 'set-url', 'origin', 'https://example.invalid/foreign.git');
+    assert.equal((await discoverUpgrade(local, f.upgrade, offline)).status, 'source_identity_unknown');
+    f.git('remote', 'set-url', 'origin', 'https://github.com/peanut-business/peanut-admin-code.git');
     const { sourceCheckout, ...withoutProof } = f.upgrade;
     const missing = await upgradeProject({ ...withoutProof, check: true }, offline);
     assert.equal(missing.status, 'source_identity_unknown');
