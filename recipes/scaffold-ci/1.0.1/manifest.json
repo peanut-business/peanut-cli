@@ -1,0 +1,16 @@
+{
+    "schema_version": 1,
+    "protocol": "peanut.recipe.v1",
+    "recipe": "scaffold-ci",
+    "version": "1.0.1",
+    "repository_kind": "scaffold",
+    "files": [
+        {
+            "path": ".github/workflows/scaffold-release.yml",
+            "classification": "managed",
+            "owner": "recipe:scaffold-ci",
+            "mode": 420,
+            "sha256": "07a883d4f1fd8df74ee7849bd90fd8fd04a6563a6b65244dd739b9f2e1b2d426"
+        }
+    ]
+}
