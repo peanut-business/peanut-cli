@@ -112,7 +112,7 @@ peanut release --with-local-core
 
 输出为“解析后的输出根/<版本>/{standalone,multi-tenant}”；仅当输出根为相对路径时才拼接 Code 根。本地 Core 配置目录不会自动随包携带；前端依赖采用 Core 构建库模式。CLI负责参数、环境调用、输出核对和原子采用；Code既有`prepare-product-release-candidate`负责输入准备、Core冻结/锁投影、依赖与API/inventory生成，`build-scaffold-release`负责Edition封装。环境未变时日常只需`peanut release`，不发布或部署。
 
-可选维护备份保存在私有 `host.json.release_database_backup`（`registry`、`resource_id`、`output`），不依赖任何固定私有仓库路径。启用后，CLI 在默认源码准备或固定 Git 制包之前调用 Code `scripts/export-release-database` 一次，两 Edition 共用该快照；失败即停止。进程须已有当前 Code candidate 的 `PEANUT_RESOURCE_LEASE_PROOF`，包含完整库 exclusive 声明，以及 SQL 父目录和 `<paths.backups>/database/release` 两个 `output-dir`。SQL 使用登记远端容器内的原生 mysqldump；旧文件保全后原子替换，旁边 `.sql.json` 记录摘要和来源。SQL 与 receipt 不进入应用模板或发行附件；完整快照可能包含业务秘密，只能在合适的私有备份仓库管理，CLI 不自动提交或推送 Git。`build-scaffold-release --check` 不触发备份。
+可选维护备份保存在私有 `host.json.release_database_backup`（`registry`、`resource_id`、`output`），不依赖任何固定私有仓库路径。启用后，CLI 在默认源码准备或固定 Git 制包之前调用 Code `scripts/export-release-database` 一次，两 Edition 共用该快照；失败即停止。普通开发备份按登记核对数据库、宿主与私有输出目录，并协调真实冲突写入，不要求额外 lease proof。SQL 使用登记远端容器内的原生 mysqldump；旧文件保全后原子替换，旁边 `.sql.json` 记录摘要和来源。SQL 与 receipt 不进入应用模板或发行附件；完整快照可能包含业务秘密，只能在合适的私有备份仓库管理，CLI 不自动提交或推送 Git。`build-scaffold-release --check` 不触发备份。
 
 本次可变工作区位于Code `.local/release/build-*/`，正常结束清理；最终输出同卷暂存仅在输出根短暂使用`.<版本>.stage-*`，覆盖恢复临时使用`.<版本>.previous-*`。本机工具配置仍位于`.local/toolchain`。模板声明统一由Code的`scripts/scaffold-runtime/scaffold.conf.json`登记：源码过滤与交付排除分开，文件映射、归属、profile、既有transform选择及文本替换由Code展开和执行；CLI仅读取其中的`source_snapshot`计算升级本地源码摘要。未登记配置的本地源码输入明确失败，不用CLI内置规则替代。配置原样进入APP受管载荷；既有归档仍按固定manifest、来源证明和原生升级器读取，不改写历史制品。
 
