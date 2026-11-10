@@ -190,9 +190,9 @@ jobs:
             # Exact GitHub Release tarball, with OIDC (no npm token in secrets).
             npm publish "$RUNNER_TEMP/$CLI_TARBALL" --access public --tag "$dist_tag" --registry https://registry.npmjs.org
             verified=false
-            for attempt in 1 2 3 4 5; do
+            for attempt in {1..60}; do
               if check_registry; then verified=true; break; fi
-              sleep 3
+              sleep 5
             done
             if [[ "$verified" != true ]]; then
               echo 'npm publication not observable; inspect before retrying' >&2
