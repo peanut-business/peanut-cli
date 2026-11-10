@@ -1,6 +1,6 @@
 {
   "name": "@peanut-admin/cli",
-  "version": "0.3.4-rc.1",
+  "version": "0.3.4",
   "description": "Independent developer CLI and tooling for Peanut products.",
   "type": "module",
   "bin": {
