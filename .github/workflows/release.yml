@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write
 
 concurrency:
   group: peanut-cli-release-${{ github.ref }}
@@ -155,3 +156,47 @@ jobs:
           cmp "$RUNNER_TEMP/$CLI_TARBALL" "$RUNNER_TEMP/published-release/$CLI_TARBALL"
           cmp "$RUNNER_TEMP/cli-release-source.json" "$RUNNER_TEMP/published-release/cli-release-source.json"
           echo "GitHub Release assets verified: $CLI_INTEGRITY" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Publish the exact release archive to npm with GitHub OIDC
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          registry_url="https://registry.npmjs.org/%40peanut%2Fcli/$version"
+          dist_tag=latest
+          if [[ "$version" == *-rc.* ]]; then dist_tag=rc; fi
+
+          # An npm version is immutable: reruns only accept identical release bytes.
+          check_registry() {
+            local status
+            status="$(curl -sS --retry 3 --max-time 30 -o "$RUNNER_TEMP/npm-version.json" -w '%{http_code}' "$registry_url")"
+            case "$status" in
+              200)
+                jq -e --arg name '@peanut/cli' --arg version "$version" --arg integrity "$CLI_INTEGRITY" \
+                  '.name == $name and .version == $version and .dist.integrity == $integrity' \
+                  "$RUNNER_TEMP/npm-version.json" >/dev/null || {
+                    echo 'Existing npm version differs from the fixed GitHub archive; refusing to overwrite' >&2
+                    exit 1
+                  }
+                return 0
+                ;;
+              404) return 1 ;;
+              *) echo "npm registry lookup failed: HTTP $status" >&2; exit 1 ;;
+            esac
+          }
+
+          if check_registry; then
+            echo "npm @peanut/cli@$version already matches the GitHub archive" | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            # Exact GitHub Release tarball, with OIDC (no npm token in secrets).
+            npm publish "$RUNNER_TEMP/$CLI_TARBALL" --access public --tag "$dist_tag" --registry https://registry.npmjs.org
+            verified=false
+            for attempt in 1 2 3 4 5; do
+              if check_registry; then verified=true; break; fi
+              sleep 3
+            done
+            if [[ "$verified" != true ]]; then
+              echo 'npm publication not observable; inspect before retrying' >&2
+              exit 1
+            fi
+            echo "npm @peanut/cli@$version published and verified against GitHub bytes" | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
