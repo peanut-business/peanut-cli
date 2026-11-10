@@ -51,7 +51,7 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}" node <<'NODE'
           const fs = require('node:fs');
           const p = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-          if (p.name !== '@peanut/cli' || p.version !== process.env.VERSION || p.private
+          if (p.name !== '@peanut-admin/cli' || p.version !== process.env.VERSION || p.private
             || p.repository?.type !== 'git'
             || p.repository?.url !== 'https://github.com/peanut-business/peanut-cli.git'
             || p.publishConfig?.access !== 'public'
@@ -88,8 +88,8 @@ jobs:
           assert len(packs) == 1
           pack = packs[0]
           version = os.environ['GITHUB_REF_NAME'][1:]
-          filename = f'peanut-cli-{version}.tgz'
-          assert pack['name'] == '@peanut/cli' and pack['version'] == version and pack['filename'] == filename
+          filename = f'peanut-admin-cli-{version}.tgz'
+          assert pack['name'] == '@peanut-admin/cli' and pack['version'] == version and pack['filename'] == filename
           tarpath = output / filename
           raw = tarpath.read_bytes()
           integrity = 'sha512-' + base64.b64encode(hashlib.sha512(raw).digest()).decode()
@@ -117,7 +117,7 @@ jobs:
                   records[path] = {'sha256': hashlib.sha256(content).hexdigest(), 'mode': entry.mode}
           assert set(records) == expected, 'Package omitted a declared source file'
           assert records['bin/peanut.js']['mode'] == 0o755
-          receipt = {'schema_version': 1, 'package': '@peanut/cli', 'version': version,
+          receipt = {'schema_version': 1, 'package': '@peanut-admin/cli', 'version': version,
               'repository': 'https://github.com/peanut-business/peanut-cli.git',
               'tag': os.environ['GITHUB_REF_NAME'], 'source_commit': os.environ['GITHUB_SHA'],
               'source_tree': os.environ['SOURCE_TREE'], 'filename': filename, 'integrity': integrity,
@@ -161,7 +161,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           version="${GITHUB_REF_NAME#v}"
-          registry_url="https://registry.npmjs.org/%40peanut%2Fcli/$version"
+          registry_url="https://registry.npmjs.org/%40peanut-admin%2Fcli/$version"
           dist_tag=latest
           if [[ "$version" == *-rc.* ]]; then dist_tag=rc; fi
 
@@ -171,7 +171,7 @@ jobs:
             status="$(curl -sS --retry 3 --max-time 30 -o "$RUNNER_TEMP/npm-version.json" -w '%{http_code}' "$registry_url")"
             case "$status" in
               200)
-                jq -e --arg name '@peanut/cli' --arg version "$version" --arg integrity "$CLI_INTEGRITY" \
+                jq -e --arg name '@peanut-admin/cli' --arg version "$version" --arg integrity "$CLI_INTEGRITY" \
                   '.name == $name and .version == $version and .dist.integrity == $integrity' \
                   "$RUNNER_TEMP/npm-version.json" >/dev/null || {
                     echo 'Existing npm version differs from the fixed GitHub archive; refusing to overwrite' >&2
@@ -185,7 +185,7 @@ jobs:
           }
 
           if check_registry; then
-            echo "npm @peanut/cli@$version already matches the GitHub archive" | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "npm @peanut-admin/cli@$version already matches the GitHub archive" | tee -a "$GITHUB_STEP_SUMMARY"
           else
             # Exact GitHub Release tarball, with OIDC (no npm token in secrets).
             npm publish "$RUNNER_TEMP/$CLI_TARBALL" --access public --tag "$dist_tag" --registry https://registry.npmjs.org
@@ -198,5 +198,5 @@ jobs:
               echo 'npm publication not observable; inspect before retrying' >&2
               exit 1
             fi
-            echo "npm @peanut/cli@$version published and verified against GitHub bytes" | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "npm @peanut-admin/cli@$version published and verified against GitHub bytes" | tee -a "$GITHUB_STEP_SUMMARY"
           fi

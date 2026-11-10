@@ -11,10 +11,10 @@ cd /path/to/peanut-cli
 npm install -g .
 ```
 
-正式版通过一个 Tag 向 GitHub Release 与 npm Registry 交付同一固定归档。完成 npm 命名空间首次发布及 OIDC 可信发行者配置后，推荐标准全局安装 `npm install -g @peanut/cli`；**是否已真正上架，以 `npm view @peanut/cli version` 为准，不能用 GitHub Release 成功替代核验**。在 npm 尚未完成接入时，仍从正式 GitHub Release 下载并校验 tarball。已下载 tarball 的安装形式如下，文件名仅作占位：
+正式版通过一个 Tag 向 GitHub Release 与 npm Registry 交付同一固定归档。完成 npm 命名空间首次发布及 OIDC 可信发行者配置后，推荐标准全局安装 `npm install -g @peanut-admin/cli`；**是否已真正上架，以 `npm view @peanut-admin/cli version` 为准，不能用 GitHub Release 成功替代核验**。在 npm 尚未完成接入时，仍从正式 GitHub Release 下载并校验 tarball。已下载 tarball 的安装形式如下，文件名仅作占位：
 
 ```sh
-npm install -g /path/to/peanut-cli-X.Y.Z.tgz
+npm install -g /path/to/peanut-admin-cli-X.Y.Z.tgz
 ```
 
 按命令操作对象选择工作目录：`config` 使用选定的 Peanut Admin Code 或生成 APP 根，`release` 使用 Code 根；`doctor`、`status`、`upgrade`、`recipe` 使用对应 APP 或脚手架根；`create` 的第一个参数是新目标目录。支持 `--path` 的命令可用它选择根目录；它自身相对当前目录解析，config/release 的其他路径相对选定项目根解析。临时 worktree 是独立根。普通用户运行已安装的 `peanut`；CLI 内部调用所选项目的 `scripts/project-env`，制包调用 Code 的 `scripts/build-scaffold-release`，不直接运行 CLI 源码仓 `bin/peanut.js`。
@@ -249,11 +249,11 @@ npm run check
 node bin/peanut.js --version
 ```
 
-A checkout can be installed locally for CLI testing with `npm install -g .`. The team development policy is to use the newest approved CLI build from `dev`. Public distribution uses the same fixed tarball in GitHub Release and npm Registry, after the one-time npm bootstrap and OIDC binding are completed. `npm install -g @peanut/cli` is supported only after the target version is confirmed in npm Registry; an unqualified development checkout is never a formal release.
+A checkout can be installed locally for CLI testing with `npm install -g .`. The team development policy is to use the newest approved CLI build from `dev`. Public distribution uses the same fixed tarball in GitHub Release and npm Registry, after the one-time npm bootstrap and OIDC binding are completed. `npm install -g @peanut-admin/cli` is supported only after the target version is confirmed in npm Registry; an unqualified development checkout is never a formal release.
 
 ## Public release contract
 
-`.github/workflows/release.yml` publishes only an annotated `vX.Y.Z` or `vX.Y.Z-rc.N` tag at the current `origin/main` commit in `peanut-business/peanut-cli`. The tag version must equal `@peanut/cli`'s package version and its repository/public package identity. The GitHub-hosted job uses Node `22.23.2`, npm `11.15.0` and `npm run check`.
+`.github/workflows/release.yml` publishes only an annotated `vX.Y.Z` or `vX.Y.Z-rc.N` tag at the current `origin/main` commit in `peanut-business/peanut-cli`. The tag version must equal `@peanut-admin/cli`'s package version and its repository/public package identity. The GitHub-hosted job uses Node `22.23.2`, npm `11.15.0` and `npm run check`.
 
 The job packs a temporary archive of that fixed source, adding only the actual source commit as `package.json.gitHead`. It verifies every declared package file against the source bytes and modes, including `bin/peanut.js` mode `0755`, and records the archive SHA-256, SHA-512 SRI and per-file SHA-256 in `cli-release-source.json`. `gitHead` records source identity; content digests prove the selected bytes, not publisher authentication.
 
@@ -261,24 +261,29 @@ The workflow creates a GitHub Release carrying that exact tarball and source rec
 
 ### First npm package + trusted publisher setup
 
-The npm `@peanut/cli` package must **exist** before it can authorize an OIDC publisher. GitHub organization membership does not imply ownership of the npm `@peanut` scope. An npm account with permission to create public packages under this precise scope (and 2FA enabled) must perform the **one-time**, separately authorized first publication. Use the verified immutable GitHub Release tarball (e.g., `v0.3.3`), not `npm pack` from a changing development working tree. Confirm the release receipt's SHA-256 and SHA-512 and that this name/version is not already registered before running the publish command:
+The official npm identity is **`@peanut-admin/cli`**. It uses the existing `@peanut-admin` npm organization; the GitHub source repository remains `peanut-business/peanut-cli`. The historical `v0.3.3` GitHub Release contains a different package name (`@peanut/cli`) and must not be republished or rewritten as the new package.
+
+npm trusted publishing cannot be configured before the first package exists. The planned initial candidate is **`0.3.4-rc.1`** with dist-tag `rc`. Once it has passed source qualification and received release approval, merge that candidate to `main` and create annotated Tag `v0.3.4-rc.1`. GitHub Actions then creates the fixed GitHub Release TGZ plus `cli-release-source.json`. Until the npm package is bootstrapped, the npm OIDC step **will fail closed**; this one-time partial release must not be reported as two-channel success.
+
+An npm account with publishing permission in `@peanut-admin` and account 2FA must then publish **that same verified v0.3.4-rc.1 GitHub Release archive**, with no local repacking. Verify its SHA-256 and SHA-512 against `cli-release-source.json` first:
 
 ```sh
 npm login --registry=https://registry.npmjs.org
 npm whoami
-# First download and verify the v0.3.3 GitHub Release tarball/cli-release-source.json.
-npm publish /absolute/verified/peanut-cli-0.3.3.tgz --access public --registry=https://registry.npmjs.org
-npm view @peanut/cli@0.3.3 version dist.integrity --json
+npm publish /absolute/verified/peanut-admin-cli-0.3.4-rc.1.tgz --access public --tag rc --registry=https://registry.npmjs.org
+npm view @peanut-admin/cli@0.3.4-rc.1 version dist.integrity --json
 ```
 
-Once the package exists, its npm owner configures a trusted GitHub publisher with the exact repository/workflow identity; npm CLI 11.15+ and interactive 2FA are required:
+Next, bind the exact workflow under the same npm account (requires npm 11.15+ and 2FA):
 
 ```sh
-npm trust github @peanut/cli --repo peanut-business/peanut-cli --file release.yml --allow-publish --yes
-npm trust list @peanut/cli --json
+npm trust github @peanut-admin/cli --repo peanut-business/peanut-cli --file release.yml --allow-publish --yes
+npm trust list @peanut-admin/cli --json
 ```
 
-The npm trust record must authorize direct `npm publish` from `peanut-business/peanut-cli` and workflow filename `release.yml`. Do not bind a different repository, choose only staged-publishing permission, add `NODE_AUTH_TOKEN` placeholders or store npm publish credentials in GitHub. npm currently expires a newly created publisher if it has no successful first OIDC publish within 2 days; complete the binding when a qualified next `main` tag (after the bootstrap version) is ready. Creating a Git tag launches the dual-channel workflow; merely merging to `main` does not. An actual tagged GitHub Actions run and public npm integrity/provenance check remain the acceptance evidence. If the `@peanut` namespace is not owned/authorized, stop instead of renaming or publishing under an unrelated account.
+The publisher must allow direct `npm publish` from `peanut-business/peanut-cli` workflow file `release.yml`; do not add npm tokens or placeholder `NODE_AUTH_TOKEN`. A newly created trusted publisher may expire if it does not successfully publish using OIDC within npm's current setup window, so coordinate the next qualified stable `v0.3.4` release promptly. Stable `v0.3.4` is the first expected fully **automatic** dual-channel publish; compare the GitHub tarball SRI with npm `dist.integrity` and confirm the `latest` dist-tag. The existing `v0.3.4-rc.1` workflow may be re-run to close its original partial failure only after verifying it has the **same** immutable GitHub and npm bytes; a successful re-run with an existing package does not by itself prove fresh OIDC publication.
+
+Merging `dev` into `main` does not create a Release. Only an authorized, annotated Tag pointing at current `main` triggers the workflow. Once stable publication is verified, users install with `npm install -g @peanut-admin/cli`. If npm ownership, 2FA, publisher identity, Release digest or a running/unknown publish cannot be verified, stop the dependent action rather than renaming the package, overwriting a version or claiming success.
 
 The following is a **fixed historical v0.3.0 example, not a latest-version claim**. For that release, download the fixed official assets, bind the receipt to the annotated tag's commit and verify both SHA-256 and SRI before installing. These commands require Node.js, npm, Git and curl:
 
