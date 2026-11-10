@@ -3,6 +3,6 @@
     "protocol": "peanut.recipe-catalog.v1",
     "recipes": {
         "app-ci": "1.0.0",
-        "scaffold-ci": "1.0.0"
+        "scaffold-ci": "1.0.1"
     }
 }

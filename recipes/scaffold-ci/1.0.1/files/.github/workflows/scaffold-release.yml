@@ -1,0 +1,78 @@
+name: Scaffold template candidate
+
+# This builds template candidates only. Formal publication uses the release gate.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scaffold-template-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  templates:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Read the committed producer tool requirements
+        id: requirements
+        shell: bash
+        run: |
+          python3 scripts/project-env requirements > "$RUNNER_TEMP/producer-tools.json"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          tools = json.loads((Path(os.environ['RUNNER_TEMP']) / 'producer-tools.json').read_text())
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as out:
+              for name in ('php', 'node', 'pnpm', 'python3', 'composer'):
+                  out.write(name + '=' + tools[name]['version'] + '\n')
+          PY
+      - name: Prepare the fixed official producer tool image
+        run: |
+          scripts/ci-producer prepare "$RUNNER_TEMP/ci-producer"
+          cp "$RUNNER_TEMP/ci-producer/identity.json" "$RUNNER_TEMP/producer-tools-actual.json"
+      - name: Prepare the committed producer dependencies
+        run: |
+          scripts/ci-producer exec "$RUNNER_TEMP/ci-producer" -- bash -Eeuo pipefail <<'PRODUCER'
+          composer --working-dir=server install --no-dev --no-plugins --no-scripts --no-interaction --no-progress --prefer-dist
+          pnpm --dir web install --frozen-lockfile --ignore-scripts --package-import-method=copy
+          npm --prefix uniapp ci --ignore-scripts
+          PRODUCER
+      - name: Build both Editions with the local native contract
+        shell: bash
+        run: |
+          scripts/ci-producer exec "$RUNNER_TEMP/ci-producer" -- bash -Eeuo pipefail <<'PRODUCER'
+          set -Eeuo pipefail
+          test ! -e .peanut/application-manifest.json
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          version="$(node -p "JSON.parse(require('node:fs').readFileSync('release-versions.json','utf8')).scaffold_template")"
+          for edition in standalone multi-tenant; do
+            php scripts/build-scaffold-release --version="$version" --source-commit="$GITHUB_SHA" \
+              --edition="$edition" --workflow=runtime --output="$RUNNER_TEMP/scaffold-templates/$edition"
+          done
+          PRODUCER
+      - uses: actions/upload-artifact@v4
+        with:
+          name: scaffold-templates-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/scaffold-templates/standalone/peanut-scaffold-standalone.tgz
+            ${{ runner.temp }}/scaffold-templates/standalone/peanut-scaffold-standalone.json
+            ${{ runner.temp }}/scaffold-templates/multi-tenant/peanut-scaffold-multi-tenant.tgz
+            ${{ runner.temp }}/scaffold-templates/multi-tenant/peanut-scaffold-multi-tenant.json
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: scaffold-production-inputs-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/scaffold-templates/standalone/scaffold-build-inputs.json
+            ${{ runner.temp }}/scaffold-templates/multi-tenant/scaffold-build-inputs.json
+            ${{ runner.temp }}/producer-tools-actual.json
+          if-no-files-found: error
+          retention-days: 7

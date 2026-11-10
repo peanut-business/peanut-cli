@@ -281,7 +281,7 @@ test('invalid id, unknown recipe, and missing application fail closed', (t) => {
     assert.match(cli(app, ['status'], 2), /APPLICATION_MANIFEST_REQUIRED/);
 });
 
-test('doctor is read-only and catalog selects 1.0.0 for new installs', (t) => {
+test('doctor is read-only and catalog selects the current recipe versions', (t) => {
     const { app, manifest, saveManifest } = createFixture(t);
     manifest.template.source_commit = 'a'.repeat(40);
     manifest.template.source_tree = 'b'.repeat(40);
@@ -295,7 +295,7 @@ test('doctor is read-only and catalog selects 1.0.0 for new installs', (t) => {
     assert.equal(result.checks['modules.lock'], true);
     assert.equal(Object.hasOwn(result.checks, 'plugins.lock'), false);
     assert.equal(cli(app, ['status']).kind, 'application');
-    assert.deepEqual(cli(app, ['recipe', 'list']).available, { 'app-ci': '1.0.0', 'scaffold-ci': '1.0.0' });
+    assert.deepEqual(cli(app, ['recipe', 'list']).available, { 'app-ci': '1.0.0', 'scaffold-ci': '1.0.1' });
     assert.deepEqual([...walk(app)].sort(), before);
 });
 
