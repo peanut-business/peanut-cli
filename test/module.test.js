@@ -47,11 +47,12 @@ const name = path.basename(request.arguments[0] || '');
 const version = name.replace(/^peanut\\.file-/, '').replace(/\\.tar$/, '');
 const pin = request.arguments[request.arguments.indexOf('--sha256') + 1];
 if (dryRun) {
-    const code = state.errors[version] || (state.installed === null ? 'PLUGIN_NOT_INSTALLED' : null);
+    const code = state.errors[version] || (request.operation === 'upgrade' && state.installed === null ? 'PLUGIN_NOT_INSTALLED' : null);
     if (code) { console.log(JSON.stringify({ code, reason: version })); process.exit(7); }
-    console.log(JSON.stringify({ schema_version: 1, operation: 'update', dry_run: true,
-        package_key: 'peanut.file', source: { version: state.installed },
-        target: { version, archive_sha256: pin }, ...state.response }));
+    console.log(JSON.stringify({ schema_version: 1,
+        operation: request.operation === 'install' ? 'install' : 'update', dry_run: true,
+        package_key: 'peanut.file', source: state.installed === null ? null : { version: state.installed },
+        target: { version, archive_sha256: pin, modules: ['peanut.file'] }, ...state.response }));
 } else {
     fs.writeFileSync('.local/applied.json', JSON.stringify(request));
     console.log(JSON.stringify({ operation: request.operation, applied: true }));
@@ -166,18 +167,18 @@ test('exact incompatibility, downgrade, permission and runtime failures stop bef
     assert.equal(f.applied(), false);
 });
 
-test('online install uses native admission and install; unsupported dry-run and installed targets stop', async (t) => {
+test('online install obtains a native install plan before exact native apply', async (t) => {
     const f = fixture(t, { installed: null, errors: { '2.0.0': 'MODULE_PACKAGE_DEPENDENCY_INCOMPATIBLE' } });
     f.add('2.0.0'); f.add('1.0.47');
     assert.equal(await f.run([], 'install'), 0);
-    assert.deepEqual(f.nativeCalls().map((call) => call.operation), ['upgrade', 'upgrade', 'install']);
+    assert.deepEqual(f.nativeCalls().map((call) => call.operation), ['install', 'install', 'install']);
     assert.match(f.nativeCalls()[2].arguments[0], /1\.0\.47\.tar$/);
-    await assert.rejects(f.run(['--dry-run'], 'install'), /INSTALL_DRY_RUN_UNSUPPORTED/);
+    assert.deepEqual(f.nativeCalls()[1].arguments, [...f.nativeCalls()[2].arguments, '--dry-run']);
     assert.equal(f.calls.filter((url) => url.startsWith(api)).length, 1);
     const installed = fixture(t);
     installed.add('1.0.47');
-    await assert.rejects(installed.run([], 'install'), /ALREADY_INSTALLED/);
-    assert.equal(installed.applied(), false);
+    assert.equal(await installed.run([], 'install'), 0);
+    assert.equal(installed.applied(), true);
 });
 
 test('API digests bind actual index and tar bytes independently of index self-claims', async (t) => {
@@ -305,12 +306,24 @@ test('preflight result is bound to the selected key/version/SHA and must be a na
     }
 });
 
-test('install dry-run fails before network, cache creation or native invocation', async (t) => {
+test('native install preflight rejects falsified install plan identity before product writes', async (t) => {
+    for (const response of [{ operation: 'update' }, { package_key: 'peanut.other' },
+        { source: { version: '9.0.0' } }, { target: { version: '1.0.47',
+            archive_sha256: '0'.repeat(64), modules: ['peanut.other'] } }]) {
+        const f = fixture(t, { installed: null, response }); f.add('1.0.47');
+        await assert.rejects(f.run([], 'install'), /PREFLIGHT_IDENTITY_INVALID|DOWNGRADE_REJECTED/);
+        assert.equal(f.nativeCalls().length, 1);
+        assert.equal(f.applied(), false);
+    }
+});
+
+test('install dry-run obtains a real native install plan without applying product state', async (t) => {
     const f = fixture(t, { installed: null }); f.add('1.0.47');
-    await assert.rejects(f.run(['--dry-run'], 'install'), /INSTALL_DRY_RUN_UNSUPPORTED/);
-    assert.deepEqual(f.calls, []);
-    assert.deepEqual(f.nativeCalls(), []);
-    assert.equal(fs.existsSync(path.join(f.root, '.local/module-downloads')), false);
+    assert.equal(await f.run(['--dry-run'], 'install'), 0);
+    assert.equal(f.nativeCalls().length, 1);
+    assert.equal(f.nativeCalls()[0].operation, 'install');
+    assert.ok(f.nativeCalls()[0].arguments.includes('--dry-run'));
+    assert.equal(f.calls.filter((url) => url.endsWith('.tar')).length, 1);
     assert.equal(f.applied(), false);
 });
 
@@ -319,11 +332,12 @@ test('install admission errors stop and a missing installation is never an upgra
         const f = fixture(t, { installed: null, errors: { '1.0.47': code } });
         f.add('1.0.47');
         assert.equal(await f.run([], 'install'), 7);
-        assert.deepEqual(f.nativeCalls().map((call) => call.operation), ['upgrade']);
+        assert.deepEqual(f.nativeCalls().map((call) => call.operation), ['install']);
         assert.equal(f.applied(), false);
     }
     const f = fixture(t, { installed: null }); f.add('1.0.47');
     assert.equal(await f.run(), 7);
+    assert.deepEqual(f.nativeCalls().map((call) => call.operation), ['upgrade']);
     assert.equal(f.applied(), false);
 });
 
