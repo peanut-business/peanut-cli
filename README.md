@@ -60,9 +60,53 @@ peanut module pack --help --root /absolute/app
 peanut module pack peanut.chart --output /absolute/release/modules/peanut.chart-1.0.3.tar --root /absolute/module-app
 peanut module install /absolute/release/modules/peanut.chart-1.0.3.tar --sha256 "$REVIEWED_SHA256" --root /absolute/consumer-app
 peanut module upgrade /absolute/release/modules/peanut.chart-1.0.3.tar --sha256 "$REVIEWED_SHA256" --root /absolute/consumer-app
+peanut module upgrade peanut.file --dry-run --root /absolute/consumer-app
+peanut module upgrade peanut.file --version 1.0.47 --root /absolute/consumer-app
+peanut module upgrade peanut.file --version 1.0.48-rc.1 --channel prerelease --root /absolute/consumer-app
+peanut module install peanut.file --root /absolute/consumer-app
 ```
 
-公开入口为 `peanut module <operation> [参数] [--root <APP目录>]`，支持 `create`、`check`、`compile`、`pack`、`adopt`、`install`、`upgrade`、`disable`、`uninstall`、`sync`、`reconcile`、`make`、`lock`、`release-composition`。默认使用当前目录作为 APP 根；`--root` 可用相对或绝对路径，自身相对当前工作目录解析。CLI 只消费 `--root`，其余参数按原顺序交给 APP；`--` 后的全部参数直接传递。各操作参数以 `peanut module <operation> --help` 为准。
+公开入口为 `peanut module <operation> [参数] [--root <APP目录>]`，支持 `create`、`check`、`compile`、`pack`、`adopt`、`install`、`upgrade`、`disable`、`uninstall`、`sync`、`reconcile`、`make`、`lock`、`release-composition`、`work`。默认使用当前目录作为 APP 根；`--root` 可用相对或绝对路径，自身相对当前工作目录解析。本地 tar 与其他操作仍只消费 `--root`，其余参数按原顺序交给 APP；`--` 后不再解析 `--root`。各原生操作参数以 `peanut module <operation> --help` 为准；在线参数见 `peanut help module`。
+
+`upgrade|install peanut.<模块名>` 从固定公共仓库 `peanut-opensource/peanut-module-code` 的 GitHub Release 附件获取模块。默认 `--channel stable`，在所有已发布 Release 的索引中独立按模块 SemVer 选择最高兼容稳定版；仓库 Tag 和模块版本可以不同。`--version` 只接受精确版本，精确 RC 也必须显式 `--channel prerelease`；该通道允许稳定版和预发行版。草稿、未发布 Release、原始 HEAD、候选目录、本地 tar 都不会成为在线发现的替代来源。没有已发布附件即报错，不伪称已安装。
+
+在线升级先以固定 SHA 调用原生 `ModuleUpdatePackage --dry-run`，核对目标身份、Edition、宿主能力、依赖和已安装版本，再通过原生受控入口实际升级；指定 `--dry-run` 时只返回原生计划。默认选择只在原生明确报告 Edition、宿主能力或依赖不兼容时尝试下一版；精确版本不回退，任何摘要/身份/运行错误立即停止，不默认或显式降级。在线安装也先复用原生升级预检；原生在完成包、Edition 和依赖验证后返回 `PLUGIN_NOT_INSTALLED`，才转入原生 install，由它完成安装校验与受控写入。已安装模块须用 upgrade。当前原生 install 没有 dry-run，因此在线 `install --dry-run` 明确拒绝。CLI 不新增依赖求解器、安装器或权限系统；APP 需已有相应原生入口并完成 `peanut config`，具体维护权限仍由 APP 决定。
+
+发布者需在每个 Release 附带 `module-release-index.json`，唯一生产入口是模块仓的 `scripts/build-module-release-index`。`modules` 必须是数组，一个索引可列出多个模块，每个模块仅一个精确版本。协议如下（摘要、长度与 commit 为形状示例，发布时必须替换为真实值）：
+
+```json
+{
+  "schema_version": 1,
+  "protocol": "peanut.module-release-index.v1",
+  "repository": "peanut-opensource/peanut-module-code",
+  "tag": "v1.0.0-rc.1",
+  "commit": "0123456789abcdef0123456789abcdef01234567",
+  "modules": [
+    {
+      "key": "peanut.file",
+      "version": "1.0.47",
+      "asset": "peanut.file-1.0.47.tar",
+      "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "bytes": 12345,
+      "license": "Apache-2.0",
+      "editions": ["multi-tenant", "standalone"],
+      "kernel_constraint": "^1.0",
+      "dependencies": [
+        { "module_key": "peanut.identity", "version": "^4.0.0-rc.32" },
+        { "module_key": "peanut.content-tools", "version": "1.0.1 || 1.0.2" }
+      ]
+    }
+  ]
+}
+```
+
+CLI 校验 GitHub Release 的官方仓库/API 身份、Tag 页面和附件 `browser_download_url`。索引和 tar 的实际下载字节都必须匹配 GitHub Release API `assets[].digest` 的 `sha256:…`；tar 还必须匹配索引 SHA 和字节长度，不能仅信任索引自述。缺失 digest 即停止。模块 manifest 的 key/version/license/kernel_constraint/dependencies、composer 的 Edition 声明须匹配所选索引项，tar 内 `META-INF/files.sha256` 覆盖及摘要也须一致；完整 schema、版本约束匹配和业务准入由原生入口再次验证。同模块同版本跨 Release 出现不同 SHA 会拒绝，另一版本的 TAR 即使 SHA 相符也不能冒名。同一发行快照的 Tag、固定 commit 和模块版本相互独立；索引 commit 是已验证附件中的来源记录，不用于拉取 HEAD 或执行本地源码。
+
+下载缓存在 APP `.local/module-downloads/<SHA256>/<附件名>`，仅用于保存本次已验证字节。每次命令重新下载并验摘要；单次命令只发现一次 Release 列表，每个索引和候选 tar 下载一次，不轮询或重新解析 Tag。实际原生写入继续使用选定的绝对 tar 路径与 SHA。升级 dry-run 会写下载缓存及原生临时暂存，不写模块产品状态。
+
+S2 与 Code 的最小待实现接口：沿用 stdin JSON `{ "operation": "install", "arguments": ["/absolute/module.tar", "--sha256", "<固定摘要>", "--dry-run"] }`，由 `server/module` 的既有 `ModuleInstallPackage` 入口提供原生只读计划。成功返回退出码 0，采用升级计划已有字段 `schema_version: 1`、`operation: "install"`、`dry_run: true`、`package_key`、`source: null`（尚未安装）及 `target.version/archive_sha256/artifact_sha256/modules`；原生负责先完成包、Edition、Kernel/宿主、依赖、安装状态和迁移身份校验。失败返回非零及 `code/reason/remediation`，`PLUGIN_NOT_INSTALLED` 不作为成功计划。dry-run 只允许可清理暂存，不提升源码、改锁、写安装/授权/迁移状态。CLI 在 Code 接口交付后核对计划身份，再用同一 TAR+SHA 调用 install；本轮不探测或假装支持该接口，在线 `install --dry-run` 在发现/下载/原生命令之前即拒绝。当前借用升级错误的安装准入仅是 S1 技术债，不能算 S2 安装预检资格。
+
+S1 资格须分别记录 CLI 协议测试和真实公开 Release 下载。受控 fetcher 与原生桥模拟只证明 CLI 编排；至少一个真实 GitHub RC 的发现、索引/API 摘要、逐包校验及隔离宿主调用通过后，才能宣称 Gate S1 端到端通过。未核实公开 Release 或 stable 依赖闭包时保留 NOT_RUN/UNKNOWN，不用本地 TAR 或 RC 替代 stable 资格。
 
 首次运行先用 `peanut config --path /absolute/app` 配置工具。模块命令通过 APP 的 `scripts/project-env` 选择 PHP，执行内部 `server/module`，以 stdin JSON `{ "operation": "check", "arguments": [] }` 传参；无需 HTTP 或启动站点。APP 的 stdout、stderr 与退出码直接返回，失败不会包装成成功。
 
