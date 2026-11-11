@@ -118,7 +118,7 @@ function usage(topic = null) {
         + 'Create --demo none|workbench defaults to none; the selection is recorded and workbench data is seeded only during first installation.\n'
         + 'Standalone and multi-tenant are separate application artifacts and deployments; normal upgrades remain within the same Edition.\n'
         + 'Create defaults to the latest official stable template attachment. Local archives require their paired manifest. No Git clone, PHP, dependency installation, database or service operation occurs. Target must be absent or strictly empty, including hidden files.\n'
-        + 'MT create --plan reads the selected template server/config/module_composition.json; offline selection also requires --module-index <absolute-json> --module-index-sha256 <trusted-sha> --module-channel prerelease. It returns blocked (exit 1) until Code exposes native batch closure and pre-bootstrap source staging; no target is written. Template and module channels are independent.\n'
+        + 'MT create --plan stages the selected template and verified module catalog, then calls Code native composition planning. Use --module-php <absolute-php> and prepare the staged consumer native dependencies when missing. Resume with --composition-stage <returned-stage>; prepare with --plan-sha256 <reviewed-native-sha> instead of --plan. Only source-prepared consumers reach the target; database installation is separate. Offline input requires --module-index <absolute-json> --module-index-sha256 <trusted-sha> --module-channel prerelease and indexed TARs beside the index. Template and module channels are independent.\n'
         + 'Fixed-release APP discovery stays within the current major; development APP checks the latest published release. Applying a development source transition requires explicit --ref.\n'
         + 'Risk feature: cross-major upgrades may break custom business code, dependencies, APIs or migrations. Review the plan, keep a recoverable backup and resolve known risks before attempting apply.\n'
         + 'Cross-major apply requires --confirm-major-upgrade. AI/Agent operators must explain source to target, risks and plan and obtain human authorization before passing this flag; prior explicit authorization for this upgrade or a defined cross-major scope is sufficient, but generic development authorization is not.\n',
@@ -166,6 +166,7 @@ function parseCreateArguments(raw) {
         ['--archive', 'archive'], ['--manifest', 'manifest'], ['--ref', 'ref'], ['--channel', 'channel'],
         ['--module-preset', 'modulePreset'], ['--module-release', 'moduleRelease'], ['--module-channel', 'moduleChannel'],
         ['--module-index', 'moduleIndex'], ['--module-index-sha256', 'moduleIndexSha256'], ['--modules', 'modules'],
+        ['--composition-stage', 'compositionStage'], ['--module-php', 'modulePhp'], ['--plan-sha256', 'planSha256'],
     ]);
     for (let index = 1; index < raw.length; index += 1) {
         const argument = raw[index];

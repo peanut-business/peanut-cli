@@ -1,0 +1,19 @@
+# S3.2 execution result — 2026-11-11
+
+CLI base: `a0e34ecb75d476a85931e4ab0b6fc5f5fb5a9fe2`. Native contract and real filesystem test: Code `6ed113f5edc104b26c68976fc1065546aea16b01`, clean dev checkout. No version bump, publication or deployment. Git dev integration is reserved for the master controller; these changes remain in the CLI feature worktree.
+
+Implemented: explicit immutable online module tag, unchanged trusted index bytes, all-catalog independently verified TAR transport, template-bound MT composition request, persistent private staged consumer, native pre-bootstrap plan, saved reviewed hash passed to native prepare, source-only target promotion after native completion, and original failure/recovery evidence retention. The CLI contains no dependency solver or alternate installer.
+
+| Check | Fixed input and scope | Actual result |
+| --- | --- | --- |
+| `npm run check` | CLI modified source and existing syntax entry | PASS, exit 0 |
+| `node --test test/*.test.js` | Existing CLI suite plus MT composition cases | PASS, 93 tests, 0 failed/skipped, exit 0 |
+| MT composition cases within that suite | Synthetic `modules-1.0.0-rc.1`, source commit `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`, canonical local test TARs; controlled GitHub fetcher and clearly identified native protocol stand-in | PASS, 13 tests; exact online/offline index bytes, independent digest/identity negatives, immutable Release requirement, optional/Edition selection, native plan identity, unchanged target/source/lock on plan, reviewed hash, changed-plan rejection, source promotion, retained partial-write recovery identity, cached/local TAR tampering and stable closure RC refusal |
+| Code `server/tests/Productization/ModuleSourceCompositionTest.php` | Real native Code implementation at the commit above, registered PHP 8.3.24, local canonical TARs and temporary uninstalled MT hosts | PASS, 33 assertions, exit 0; real JSON bridge with AppService/business Module/DB loading traps, read-only preplan, graph source/lock transaction, identity and negative cases, forward recovery |
+| Public Release identity request | Exact API tag `v1.0.0-rc.2`, one Node fetch with 15-second timeout | BLOCKED, exit 1: `getaddrinfo ENOTFOUND api.github.com`; no retry or substitute source |
+| Fresh consumer with its own native dependencies and public RC2 TARs | Real CLI → consumer → Code source preparation | NOT_RUN: public fetch blocked; no new current template/vendor environment was prepared. Do not combine protocol stand-in and Code suite results into an end-to-end PASS. |
+| DB first install, API/registry/client preparation, login/HTTP, tenant isolation, ST, archived or business applications | Outside this source-only check | NOT_RUN; no database/application/production operations |
+
+The missing-dependency path is exercised and returns `CODE_NATIVE_DEPENDENCIES_REQUIRED` with exact missing `server/module`, `server/vendor/autoload.php` and framework helper paths, while preserving the stage and leaving the target untouched. A real selected template can supply the bridge yet still lack its own vendor; native locked dependency preparation must resolve that actual consumer prerequisite. CLI does not install those dependencies or copy another application's vendor. Any later native incompatibility remains a blocker with its original exit/diagnostics/recovery identity.
+
+Current Code templates still include eight official source modules. No thin-template or first-install qualification is claimed. The next consumer check must use a fixed template carrying this native contract, the unchanged RC2 index/API asset digests, and this consumer's own native dependencies. Review the actual native graph/hash before source preparation. Preserve a failed or unknown stage and reconcile its original journal through `adopt --recover` before re-planning. Do not use archived applications or databases for this check.

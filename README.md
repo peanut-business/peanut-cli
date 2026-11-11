@@ -117,16 +117,16 @@ peanut create /absolute/new-app --name Example --slug example --package example/
   --edition multi-tenant --archive /absolute/template.tgz --manifest /absolute/template.json \
   --plan --module-preset standard --module-release "$MODULE_RELEASE_TAG" --module-channel prerelease
 
-# 使用从可信渠道独立取得的索引 SHA 重现同一离线选择；不会联网或读取本地模块源码。
+# 使用独立索引 SHA 和索引旁的同名 TAR 离线重现；不会联网。
 peanut create /absolute/new-app --name Example --slug example --package example/app \
   --edition multi-tenant --archive /absolute/template.tgz --manifest /absolute/template.json \
   --plan --module-preset minimal --module-release "$MODULE_RELEASE_TAG" --module-channel prerelease \
   --module-index /absolute/module-release-index.json --module-index-sha256 "$REVIEWED_INDEX_SHA256"
 ```
 
-在线只读取显式 tag 的已发布 Release 及 API digest 固定的索引；离线只读取显式索引和独立 SHA，不声称验证了 GitHub 发行状态。两者保留同一原始索引 SHA、commit、精确模块版本／归档 SHA。模板 `--channel` 与 `--module-channel` 分开，RC 必须显式选择；离线尚不能证明 stable Release 通道，因此只接受显式 prerelease。缺少该清单的旧模板不能规划外置组合。显式组合参数只允许与 `--plan` 一起使用；普通 create 保留原有模板源码生成合同，不因此取得外置模块闭包或首次安装资格。
+在线核验显式 tag 的已发布不可变 Release、API digest 固定的索引及 catalog TAR；离线核验显式索引、独立 SHA 和同目录 TAR，不声称验证了 GitHub 发行状态。两者保留原始索引字节、commit 和精确制品身份，完整依赖闭包交给 Code。模板与模块渠道独立，RC 须显式选择；离线只接受显式 prerelease。缺少组合清单的旧模板不能规划外置组合。
 
-当前仅交付安全选择计划：返回 `status: blocked`、退出码 1，明确 `dependency_resolution/source_adoption/installation: not-run`；不写目标、不调用 PHP、不下载模块 TAR、不安装依赖、不连接数据库。清单尚无 optional 时保留分类缺口，不把索引中剩余模块自动当可选。原生批量候选闭包和 bootstrap 前源码暂存合同未就绪前，不宣称 S2 首装或 S3 薄模板可用。具体已有能力、缺口及接入合同见 [MT 规划合同](docs/mt-create-module-planning.md)。
+`--plan` 返回私有 `composition_stage` 与暂存消费者，通过显式 `--module-php /absolute/php` 调用 Code 原生 plan；缺本消费者的 bridge/vendor 时报告精确 blocker 并保留暂存目录。依赖须通过该消费者原生工具准备，不复制其他应用 vendor。重复同一固定参数并加 `--composition-stage` 可继续 plan。审阅后用 `--plan-sha256 <native-sha>` 替换 `--plan`，Code 在原 writer 内复算并比较 hash，原生 `source-prepared` 成功后才提升到目标，返回 `source-created`。错误保留原生退出码、诊断和恢复身份；目标在 plan 或失败时不写入。完整命令、离线约束及恢复见 [MT 组合合同](docs/mt-create-module-planning.md)。当前模板仍含 8 模块，不是 thin；依赖/API/编译、DB 首装与运行验收未由此完成，ST 暂缓。
 
 首次运行先用 `peanut config --path /absolute/app` 配置工具。模块命令通过 APP 的 `scripts/project-env` 选择 PHP，执行内部 `server/module`，以 stdin JSON `{ "operation": "check", "arguments": [] }` 传参；无需 HTTP 或启动站点。APP 的 stdout、stderr 与退出码直接返回，失败不会包装成成功。
 
