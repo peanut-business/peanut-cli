@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { createInterface } from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
 import {
@@ -393,16 +394,30 @@ async function main() {
         return 0;
     }
 
+    const hostPath = projectPath(root, '.local/toolchain/host.json');
+    const host = regularFile(hostPath) ? readJsonObject(hostPath) : null;
+    // A configured APP uses its own selected toolchain, not the shell's PATH.
+    const toolAvailable = (name) => {
+        if (!host) return commandExists(name);
+        const argv = host.commands?.[name];
+        if (!Array.isArray(argv) || argv.length === 0
+            || argv.some(item => typeof item !== 'string' || item === '')) return false;
+        const executable = path.resolve(root, host.path_base ?? '.', argv[0]);
+        const result = spawnSync(executable, [...argv.slice(1), '--version'], {
+            stdio: 'ignore', timeout: 10000, shell: false,
+        });
+        return result.status === 0;
+    };
     const checks = {
         ...phpEnvironmentChecks(),
-        tool_node: commandExists('node'),
-        tool_npm: commandExists('npm'),
-        tool_pnpm: commandExists('pnpm'),
+        tool_node: toolAvailable('node'),
+        tool_npm: toolAvailable('npm'),
+        tool_pnpm: toolAvailable('pnpm'),
     };
     for (const file of [
         'server/composer.json', 'server/composer.lock', 'web/package.json', 'web/pnpm-lock.yaml',
         'modules.lock', 'RELEASE_METADATA.json', 'resources/project-resources.json',
-        'scripts/project-composer', 'scripts/upgrade',
+        'scripts/project-composer', 'scripts/scaffold-upgrade',
     ]) {
         const target = projectPath(root, file);
         checks[file] = regularFile(target);

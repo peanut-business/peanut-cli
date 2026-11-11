@@ -299,6 +299,28 @@ test('doctor is read-only and catalog selects the current recipe versions', (t) 
     assert.deepEqual([...walk(app)].sort(), before);
 });
 
+test('doctor uses the selected APP toolchain and current scaffold upgrade entry', (t) => {
+    const { app } = createFixture(t);
+    const local = path.join(app, '.local/toolchain');
+    fs.mkdirSync(local, { recursive: true });
+    fs.writeFileSync(path.join(local, 'host.json'), JSON.stringify({
+        commands: { node: [process.execPath], npm: [process.execPath], pnpm: [process.execPath] },
+    }));
+    fs.mkdirSync(path.join(app, 'scripts'));
+    fs.writeFileSync(path.join(app, 'scripts/scaffold-upgrade'), '#!/bin/sh\\n');
+    const result = spawnSync(process.execPath, [BIN, 'doctor', '--path', app], {
+        encoding: 'utf8', env: { ...process.env, PATH: '' },
+    });
+    assert.equal(result.status, 1);
+    const report = JSON.parse(result.stdout);
+    assert.equal(report.checks.tool_node, true);
+    assert.equal(report.checks.tool_npm, true);
+    assert.equal(report.checks.tool_pnpm, true);
+    assert.equal(report.checks['scripts/scaffold-upgrade'], true);
+    assert.equal(Object.hasOwn(report.checks, 'scripts/upgrade'), false);
+    assert.equal(report.checks['server/composer.lock'], false);
+});
+
 test('corrupt bundle is rejected before application writes', (t) => {
     const { temp, app } = createFixture(t);
     const tool = path.join(temp, 'tool');
