@@ -97,6 +97,7 @@ function usage(topic = null) {
         + '       peanut config [--path <project-root>] [--php <path>] [--node <path>] [--npm <path>] [--pnpm <path>] [--composer <path>] [--python <path>] [--core-php <path>] [--core-web <path>] [--release <path>] [--backups <path>] [--pnpm-cache <path>] [--npm-cache <path>] [--composer-cache <path>] [--extra-path <path>]... [--watch-path <path>]... [--yes]\n'
         + 'Usage: peanut create <absolute-target> --name <name> --slug <slug> --package <vendor/name> [--edition standalone|multi-tenant] [--application-version <semver>] [--ref <version>] [--channel stable|prerelease]\n'
         + '       peanut create <absolute-target> --name <name> --slug <slug> --package <vendor/name> --edition standalone|multi-tenant --archive <absolute-template.tgz> --manifest <absolute-template.json>\n'
+        + '       peanut create <absolute-target> --name <name> --slug <slug> --package <vendor/name> --edition multi-tenant --plan --module-release <tag> [--module-preset standard|minimal] [--module-channel stable|prerelease] [--modules <optional-key,...>]\n'
         + '       peanut doctor|status [--path <application>]\n'
         + '       peanut release [--path <scaffold>] [--version <semver>] [--core-php <version>] [--core-web <version>] [--with-local-core] [--output <path>] [--overwrite]\n'
         + '       peanut upgrade [--check|--plan] [--ref <version-or-tag>] [--channel stable|prerelease] [--confirm-major-upgrade] [--path <application>]\n'
@@ -117,6 +118,7 @@ function usage(topic = null) {
         + 'Create --demo none|workbench defaults to none; the selection is recorded and workbench data is seeded only during first installation.\n'
         + 'Standalone and multi-tenant are separate application artifacts and deployments; normal upgrades remain within the same Edition.\n'
         + 'Create defaults to the latest official stable template attachment. Local archives require their paired manifest. No Git clone, PHP, dependency installation, database or service operation occurs. Target must be absent or strictly empty, including hidden files.\n'
+        + 'MT create --plan reads the selected template server/config/module_composition.json; offline selection also requires --module-index <absolute-json> --module-index-sha256 <trusted-sha> --module-channel prerelease. It returns blocked (exit 1) until Code exposes native batch closure and pre-bootstrap source staging; no target is written. Template and module channels are independent.\n'
         + 'Fixed-release APP discovery stays within the current major; development APP checks the latest published release. Applying a development source transition requires explicit --ref.\n'
         + 'Risk feature: cross-major upgrades may break custom business code, dependencies, APIs or migrations. Review the plan, keep a recoverable backup and resolve known risks before attempting apply.\n'
         + 'Cross-major apply requires --confirm-major-upgrade. AI/Agent operators must explain source to target, risks and plan and obtain human authorization before passing this flag; prior explicit authorization for this upgrade or a defined cross-major scope is sufficient, but generic development authorization is not.\n',
@@ -162,11 +164,18 @@ function parseCreateArguments(raw) {
         ['--name', 'name'], ['--slug', 'slug'], ['--package', 'package'], ['--edition', 'edition'],
         ['--profile', 'profile'], ['--workflow', 'workflow'], ['--demo', 'demo'], ['--application-version', 'applicationVersion'],
         ['--archive', 'archive'], ['--manifest', 'manifest'], ['--ref', 'ref'], ['--channel', 'channel'],
+        ['--module-preset', 'modulePreset'], ['--module-release', 'moduleRelease'], ['--module-channel', 'moduleChannel'],
+        ['--module-index', 'moduleIndex'], ['--module-index-sha256', 'moduleIndexSha256'], ['--modules', 'modules'],
     ]);
     for (let index = 1; index < raw.length; index += 1) {
         const argument = raw[index];
         const equals = argument.indexOf('=');
         const flag = equals === -1 ? argument : argument.slice(0, equals);
+        if (flag === '--plan') {
+            if (equals !== -1 || values.plan !== undefined) throw new Error('PEANUT_CREATE_ARGUMENTS_INVALID');
+            values.plan = true;
+            continue;
+        }
         const key = map.get(flag);
         if (!key || Object.prototype.hasOwnProperty.call(values, key)) throw new Error('PEANUT_CREATE_ARGUMENTS_INVALID');
         const value = equals === -1 ? (raw[++index] ?? '') : argument.slice(equals + 1);
@@ -273,8 +282,9 @@ async function main() {
     }
     if (process.argv[2] === 'create') {
         const createOptions = await chooseCreateEdition(parseCreateArguments(process.argv.slice(3)));
-        output(await createProject(createOptions));
-        return 0;
+        const result = await createProject(createOptions);
+        output(result);
+        return result.status === 'blocked' ? 1 : 0;
     }
     if (process.argv[2] === 'upgrade') {
         const result = await upgradeProject(parseUpgradeArguments(process.argv.slice(3)));

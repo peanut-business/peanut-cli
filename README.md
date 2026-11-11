@@ -70,7 +70,7 @@ peanut module install peanut.file --root /absolute/consumer-app
 
 `upgrade|install peanut.<模块名>` 从固定公共仓库 `peanut-opensource/peanut-module-code` 的 GitHub Release 附件获取模块。默认 `--channel stable`，在所有已发布 Release 的索引中独立按模块 SemVer 选择最高兼容稳定版；仓库 Tag 和模块版本可以不同。`--version` 只接受精确版本，精确 RC 也必须显式 `--channel prerelease`；该通道允许稳定版和预发行版。草稿、未发布 Release、原始 HEAD、候选目录、本地 tar 都不会成为在线发现的替代来源。没有已发布附件即报错，不伪称已安装。
 
-在线升级先以固定 SHA 调用原生 `ModuleUpdatePackage --dry-run`，核对目标身份、Edition、宿主能力、依赖和已安装版本，再通过原生受控入口实际升级；指定 `--dry-run` 时只返回原生计划。默认选择只在原生明确报告 Edition、宿主能力或依赖不兼容时尝试下一版；精确版本不回退，任何摘要/身份/运行错误立即停止，不默认或显式降级。在线安装也先复用原生升级预检；原生在完成包、Edition 和依赖验证后返回 `PLUGIN_NOT_INSTALLED`，才转入原生 install，由它完成安装校验与受控写入。已安装模块须用 upgrade。当前原生 install 没有 dry-run，因此在线 `install --dry-run` 明确拒绝。CLI 不新增依赖求解器、安装器或权限系统；APP 需已有相应原生入口并完成 `peanut config`，具体维护权限仍由 APP 决定。
+在线升级先以固定 SHA 调用原生 `ModuleUpdatePackage --dry-run`，核对目标身份、Edition、宿主能力、依赖和已安装版本，再通过原生受控入口实际升级；指定 `--dry-run` 时只返回原生计划。默认选择只在原生明确报告 Edition、宿主能力或依赖不兼容时尝试下一版；精确版本不回退，任何摘要/身份/运行错误立即停止，不默认或显式降级。在线安装直接使用 `ModuleInstallPackage --dry-run`，成功并核对计划身份后才调用相同 TAR+SHA 的 install；`install --dry-run` 仅返回计划。CLI 不新增依赖求解器、安装器或权限系统；APP 需已有相应原生入口并完成 `peanut config`，具体维护权限仍由 APP 决定。这是已有 APP 的原生模块操作，不是新建薄模板的数据库 bootstrap 前源码准备入口。
 
 发布者需在每个 Release 附带 `module-release-index.json`，唯一生产入口是模块仓的 `scripts/build-module-release-index`。`modules` 必须是数组，一个索引可列出多个模块，每个模块仅一个精确版本。协议如下（摘要、长度与 commit 为形状示例，发布时必须替换为真实值）：
 
@@ -107,6 +107,26 @@ CLI 校验 GitHub Release 的官方仓库/API 身份、Tag 页面和附件 `brow
 S2 与 Code 已交付的原生首次安装预检接口：沿用 stdin JSON `{ "operation": "install", "arguments": ["/absolute/module.tar", "--sha256", "<固定摘要>", "--dry-run"] }`，由 `server/module` 的既有 `ModuleInstallPackage` 入口提供原生只读计划。成功返回退出码 0，采用升级计划已有字段 `schema_version: 1`、`operation: "install"`、`dry_run: true`、`package_key`、`source: null`（尚未安装）及 `target.version/archive_sha256/artifact_sha256/modules`；原生负责先完成包、Edition、Kernel/宿主、依赖、安装状态和迁移身份校验。失败返回非零及 `code/reason/remediation`，`PLUGIN_NOT_INSTALLED` 不作为成功计划。dry-run 只允许可清理暂存，不提升源码、改锁、写安装/授权/迁移状态。CLI 在 Code 接口交付后核对计划身份，再用同一 TAR+SHA 调用 install；CLI 已按 Code 公共合同实际接入该预检，在线 `install --dry-run` 取得并校验官方 TAR 后调用原生安装只读计划，不提升业务产品状态。旧借用升级错误的首次安装准入已退出；实际 DB 安装及浏览器验收仍须另做。
 
 S1 资格须分别记录 CLI 协议测试和真实公开 Release 下载。受控 fetcher 与原生桥模拟只证明 CLI 编排；至少一个真实 GitHub RC 的发现、索引/API 摘要、逐包校验及隔离宿主调用通过后，才能宣称 Gate S1 端到端通过。未核实公开 Release 或 stable 依赖闭包时保留 NOT_RUN/UNKNOWN，不用本地 TAR 或 RC 替代 stable 资格。
+
+### MT 创建与官方组合规划
+
+`create --plan` 从所选模板包内的 `server/config/module_composition.json` 读取版本化 `peanut.application-module-composition.v1` 清单。Code 是唯一产品成员来源；CLI 不维护第二份必选、默认或可选模块表。`standard` 选择 mandatory + default，`minimal` 只选择 mandatory，`--modules` 仅允许清单明确列入 optional 的额外项。必选不会被省略；依赖闭包仍交给 Code 原生检查。
+
+```sh
+peanut create /absolute/new-app --name Example --slug example --package example/app \
+  --edition multi-tenant --archive /absolute/template.tgz --manifest /absolute/template.json \
+  --plan --module-preset standard --module-release "$MODULE_RELEASE_TAG" --module-channel prerelease
+
+# 使用从可信渠道独立取得的索引 SHA 重现同一离线选择；不会联网或读取本地模块源码。
+peanut create /absolute/new-app --name Example --slug example --package example/app \
+  --edition multi-tenant --archive /absolute/template.tgz --manifest /absolute/template.json \
+  --plan --module-preset minimal --module-release "$MODULE_RELEASE_TAG" --module-channel prerelease \
+  --module-index /absolute/module-release-index.json --module-index-sha256 "$REVIEWED_INDEX_SHA256"
+```
+
+在线只读取显式 tag 的已发布 Release 及 API digest 固定的索引；离线只读取显式索引和独立 SHA，不声称验证了 GitHub 发行状态。两者保留同一原始索引 SHA、commit、精确模块版本／归档 SHA。模板 `--channel` 与 `--module-channel` 分开，RC 必须显式选择；离线尚不能证明 stable Release 通道，因此只接受显式 prerelease。缺少该清单的旧模板不能规划外置组合。显式组合参数只允许与 `--plan` 一起使用；普通 create 保留原有模板源码生成合同，不因此取得外置模块闭包或首次安装资格。
+
+当前仅交付安全选择计划：返回 `status: blocked`、退出码 1，明确 `dependency_resolution/source_adoption/installation: not-run`；不写目标、不调用 PHP、不下载模块 TAR、不安装依赖、不连接数据库。清单尚无 optional 时保留分类缺口，不把索引中剩余模块自动当可选。原生批量候选闭包和 bootstrap 前源码暂存合同未就绪前，不宣称 S2 首装或 S3 薄模板可用。具体已有能力、缺口及接入合同见 [MT 规划合同](docs/mt-create-module-planning.md)。
 
 首次运行先用 `peanut config --path /absolute/app` 配置工具。模块命令通过 APP 的 `scripts/project-env` 选择 PHP，执行内部 `server/module`，以 stdin JSON `{ "operation": "check", "arguments": [] }` 传参；无需 HTTP 或启动站点。APP 的 stdout、stderr 与退出码直接返回，失败不会包装成成功。
 
