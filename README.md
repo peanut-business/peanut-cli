@@ -126,7 +126,7 @@ peanut create /absolute/new-app --name Example --slug example --package example/
 
 在线核验显式 tag 的已发布不可变 Release、API digest 固定的索引及 catalog TAR；离线核验显式索引、独立 SHA 和同目录 TAR，不声称验证了 GitHub 发行状态。两者保留原始索引字节、commit 和精确制品身份，完整依赖闭包交给 Code。模板与模块渠道独立，RC 须显式选择；离线只接受显式 prerelease。缺少组合清单的旧模板不能规划外置组合。
 
-`--plan` 返回私有 `composition_stage` 与暂存消费者，通过显式 `--module-php /absolute/php` 调用 Code 原生 plan；缺本消费者的 bridge/vendor 时报告精确 blocker 并保留暂存目录。依赖须通过该消费者原生工具准备，不复制其他应用 vendor。重复同一固定参数并加 `--composition-stage` 可继续 plan。审阅后用 `--plan-sha256 <native-sha>` 替换 `--plan`，Code 在原 writer 内复算并比较 hash，原生 `source-prepared` 成功后才提升到目标，返回 `source-created`。错误保留原生退出码、诊断和恢复身份；目标在 plan 或失败时不写入。完整命令、离线约束及恢复见 [MT 组合合同](docs/mt-create-module-planning.md)。当前模板仍含 8 模块，不是 thin；依赖/API/编译、DB 首装与运行验收未由此完成，ST 暂缓。
+`--plan` 返回私有 `composition_stage` 与暂存消费者，通过显式 `--module-php /absolute/php` 调用 Code 原生 plan；缺本消费者的 bridge/vendor 时报告精确 blocker 并保留暂存目录。依赖须通过该消费者原生工具准备，不复制其他应用 vendor。重复同一固定参数并加 `--composition-stage` 可继续 plan。审阅后用 `--plan-sha256 <native-sha>` 替换 `--plan`，Code 在原 writer 内复算并比较 hash，原生 `source-prepared` 成功后才提升到目标，返回 `source-created`。错误保留原生退出码、诊断和恢复身份；目标在 plan 或失败时不写入。完整命令、离线约束及恢复见 [MT 组合合同](docs/mt-create-module-planning.md)。当前官方 ST/MT 模板是薄模板，默认不带官方模块源码，modules.lock 为空。需要模块时由模块专用开发应用独立发行，消费者按实际选择和依赖闭包采用；CLI plan 只确认源码范围，不执行依赖/API/模块编译、数据库首装或业务验收。
 
 首次运行先用 `peanut config --path /absolute/app` 配置工具。模块命令通过 APP 的 `scripts/project-env` 选择 PHP，执行内部 `server/module`，以 stdin JSON `{ "operation": "check", "arguments": [] }` 传参；无需 HTTP 或启动站点。APP 的 stdout、stderr 与退出码直接返回，失败不会包装成成功。
 
@@ -216,7 +216,7 @@ peanut upgrade --recover-plan /absolute/plan.json --path /absolute/app
 | `--baseline-mode-manifest` | 可选 | 为旧 APP 基线模式提供原始发布清单 |
 | `--apply-plan` | 使用已有计划时必需 | 应用指定计划；可配 `--confirm-plan-sha256`、`--preserve-paths`、`--replace-paths` |
 | `--recover-plan` | 恢复时必需 | 按原计划执行文件恢复；不可与来源选择参数同用 |
-| `--confirm-major-upgrade` | 跨主版本 apply 时必需 | 确认跨主版本升级；需先审阅计划并获授权 |
+| `--confirm-major-upgrade` | 跨主版本 apply 时必需 | 确认跨主版本或 development→stable 正式来源切换；先审阅计划并获授权 |
 
 `--apply-plan` 与 `--recover-plan` 是真实命令选项；CLI 没有单独的 `--apply` 开关。`--preserve-paths` 与 `--replace-paths` 使用路径列表，空列表写 `-`。
 
@@ -323,61 +323,16 @@ The job packs a temporary archive of that fixed source, adding only the actual s
 
 The workflow creates a GitHub Release carrying that exact tarball and source receipt, then downloads both assets and compares their bytes. An existing release must have the same tag, published/prerelease state and exactly matching assets; it is never overwritten. Stable tags create formal releases and `-rc.N` tags create prereleases. The next step publishes **that identical tarball** to npm Registry using GitHub Actions OIDC (`id-token: write`), without a long-lived npm publish token. Existing registry versions are accepted only when the package name, exact version and SHA-512 integrity match the GitHub archive; a differing immutable version fails instead of being overwritten. Stable versions use npm dist-tag `latest`, prereleases use `rc`. The GitHub Release may exist when the npm step fails; do not mark the entire release successful in this case. Inspect registry and the original workflow run before rerunning the same tag.
 
-### First npm package + trusted publisher setup
+### 当前 npm 与 GitHub 发行合同
 
-The official npm identity is **`@peanut-admin/cli`**. It uses the existing `@peanut-admin` npm organization; the GitHub source repository remains `peanut-business/peanut-cli`. The historical `v0.3.3` GitHub Release contains a different package name (`@peanut/cli`) and must not be republished or rewritten as the new package.
+CLI 的唯一公开包名是 @peanut-admin/cli，GitHub 源仓为 peanut-business/peanut-cli。2026-11-12 已从 npm Registry 直接核实 latest=0.3.4、rc=0.3.4-rc.1；安装前仍应以实际 npm view 输出为准：
 
-npm trusted publishing cannot be configured before the first package exists. The initial bootstrap version is **`0.3.4-rc.1`** with dist-tag `rc`. Once it has passed source qualification and received release approval, merge that candidate to `main` and create annotated Tag `v0.3.4-rc.1`. GitHub Actions then creates the fixed GitHub Release TGZ plus `cli-release-source.json`. Until the npm package is bootstrapped, the npm OIDC step **will fail closed**; this one-time partial release must not be reported as two-channel success.
+    npm view @peanut-admin/cli version dist-tags --json
+    npm install -g @peanut-admin/cli
 
-An npm account with publishing permission in `@peanut-admin` and account 2FA must then publish **that same verified v0.3.4-rc.1 GitHub Release archive**, with no local repacking. Verify its SHA-256 and SHA-512 against `cli-release-source.json` first:
+CLI 与 Code 脚手架、Core、模块和业务 APP 各自独立版本；不能用 CLI 发布替代应用首次安装、模块采用或项目升级。CLI 发行使用已登记的 GitHub 工作流 release.yml 与可信 npm OIDC 发行者。仅当前 npm 包名、同一固定发布归档、tag/源提交、GitHub Release 与 npm 实际 tarball/SRI 均核验通过，才算 CLI 两渠道完成。
 
-```sh
-npm login --registry=https://registry.npmjs.org
-npm whoami
-npm publish /absolute/verified/peanut-admin-cli-0.3.4-rc.1.tgz --access public --tag rc --registry=https://registry.npmjs.org
-npm view @peanut-admin/cli@0.3.4-rc.1 version dist.integrity --json
-```
-
-Next, bind the exact workflow under the same npm account (requires npm 11.15+ and 2FA):
-
-```sh
-npm trust github @peanut-admin/cli --repo peanut-business/peanut-cli --file release.yml --allow-publish --yes
-npm trust list @peanut-admin/cli --json
-```
-
-The publisher must allow direct `npm publish` from `peanut-business/peanut-cli` workflow file `release.yml`; do not add npm tokens or placeholder `NODE_AUTH_TOKEN`. A newly created trusted publisher may expire if it does not successfully publish using OIDC within npm's current setup window, so coordinate the next qualified stable `v0.3.4` release promptly. Stable `v0.3.4` must demonstrate fully **automatic** dual-channel publication; compare the GitHub tarball SRI with npm `dist.integrity` and confirm the `latest` dist-tag. The workflow waits up to approximately five minutes for npm registry propagation after a successful publish. The existing `v0.3.4-rc.1` workflow may be re-run to close its original partial failure only after verifying it has the **same** immutable GitHub and npm bytes; a successful re-run with an existing package does not by itself prove fresh OIDC publication.
-
-Merging `dev` into `main` does not create a Release. Only an authorized, annotated Tag pointing at current `main` triggers the workflow. Once stable publication is verified, users install with `npm install -g @peanut-admin/cli`. If npm ownership, 2FA, publisher identity, Release digest or a running/unknown publish cannot be verified, stop the dependent action rather than renaming the package, overwriting a version or claiming success.
-
-The following is a **fixed historical v0.3.0 example, not a latest-version claim**. For that release, download the fixed official assets, bind the receipt to the annotated tag's commit and verify both SHA-256 and SRI before installing. These commands require Node.js, npm, Git and curl:
-
-```sh
-set -euo pipefail
-cli_download="$(mktemp -d)"
-cli_release='https://github.com/peanut-business/peanut-cli/releases/download/v0.3.0'
-curl --fail --location "$cli_release/peanut-cli-0.3.0.tgz" --output "$cli_download/peanut-cli-0.3.0.tgz"
-curl --fail --location "$cli_release/cli-release-source.json" --output "$cli_download/cli-release-source.json"
-cli_source_commit="$(git ls-remote https://github.com/peanut-business/peanut-cli.git 'refs/tags/v0.3.0^{}' | awk '{print $1}')"
-node - "$cli_download" "$cli_source_commit" <<'NODE'
-const fs = require('node:fs');
-const crypto = require('node:crypto');
-const directory = process.argv[2], commit = process.argv[3];
-const receipt = JSON.parse(fs.readFileSync(`${directory}/cli-release-source.json`, 'utf8'));
-const archive = fs.readFileSync(`${directory}/peanut-cli-0.3.0.tgz`);
-if (!/^[a-f0-9]{40}$/.test(commit) || receipt.schema_version !== 1
-  || receipt.package !== '@peanut/cli' || receipt.version !== '0.3.0'
-  || receipt.repository !== 'https://github.com/peanut-business/peanut-cli.git'
-  || receipt.tag !== 'v0.3.0' || receipt.source_commit !== commit
-  || receipt.filename !== 'peanut-cli-0.3.0.tgz'
-  || receipt.sha256 !== crypto.createHash('sha256').update(archive).digest('hex')
-  || receipt.integrity !== `sha512-${crypto.createHash('sha512').update(archive).digest('base64')}`) {
-  throw new Error('Official release source or archive digest differs; do not install');
-}
-console.log(`Verified @peanut/cli@0.3.0 from ${commit}`);
-NODE
-npm install --global "$cli_download/peanut-cli-0.3.0.tgz"
-peanut --version
-```
+以前 v0.3.3 的旧包名 @peanut/cli 和首次 npm 命名空间引导操作是历史记录，只在 Git 历史或旧发行回执里追溯，不是现在需要重复执行的日常步骤。不要再次手工 npm bootstrap、设置 Token、重发未改变版本或把旧包名复活。若发行失败，先查原 GitHub run/npm 公开对象及 OIDC 状态，只恢复缺失的一环；版本身份和摘要不一致时拒绝发布。
 
 ## Branches
 
