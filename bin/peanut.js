@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { createInterface } from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
 import {
@@ -23,7 +24,11 @@ function usage(topic = null) {
         process.stdout.write(
             '用法：peanut module <operation> [参数] [--root <APP目录>]\npeanut help module\n\n'
             + `操作：${MODULE_OPERATIONS.join(', ')}\n\n`
-            + '默认在当前 APP 根执行；--root 自身相对当前工作目录解析。其余参数原样传给 APP 模块入口，操作参数帮助使用 peanut module <operation> --help。\n'
+            + '默认在当前 APP 根执行；--root 自身相对当前工作目录解析。本地包及其他操作的参数原样传给 APP，操作参数帮助使用 peanut module <operation> --help。\n'
+            + '在线：peanut module upgrade|install peanut.file [--version 1.0.47] [--channel stable|prerelease] [--root APP]\n'
+            + '发现更新：peanut module updates [--channel stable|prerelease] [--root APP]（只读、无需本机 PHP/环境登记；安装仍须原生预检）。\n'
+            + 'upgrade 支持 --dry-run；install 原生入口尚不支持 dry-run，显式请求将拒绝。\n'
+            + '在线默认选择最高兼容稳定模块版本；精确 RC 也必须 --channel prerelease。仅使用 peanut-opensource/peanut-module-code 已发布 Release 的 module-release-index.json 和 tar 附件，并按 GitHub API assets[].digest 验证两者。缓存位于 APP .local/module-downloads，每次重新下载验 SHA；原生预检和受控写入负责 Edition、依赖、权限及已安装版本，禁止降级。\n'
             + '复用 APP scripts/project-env 和 .local/toolchain/host.json 中选择的 PHP，通过 JSON stdin 调用 server/module，无需启动 HTTP 服务。首次使用先运行 peanut config。\n'
             + '模块包默认输出至 APP 配置 paths.release 下的 modules（默认 release/modules）；相对发行路径以 APP 根解析。操作结果和退出码由 APP 返回。\n',
         );
@@ -89,9 +94,13 @@ function usage(topic = null) {
         + 'Usage: peanut <command> [options]\n'
         + '       peanut help [config|release|module]\n'
         + '       peanut module <operation> [args] [--root <application>]\n'
+        + '       peanut module upgrade peanut.file [--version <semver>] [--channel stable|prerelease] [--dry-run] [--root <application>]\n'
+        + '       peanut module install peanut.file [--version <semver>] [--channel stable|prerelease] [--root <application>]\n'
+        + '       peanut module updates [--channel stable|prerelease] [--root <application>]\n'
         + '       peanut config [--path <project-root>] [--php <path>] [--node <path>] [--npm <path>] [--pnpm <path>] [--composer <path>] [--python <path>] [--core-php <path>] [--core-web <path>] [--release <path>] [--backups <path>] [--pnpm-cache <path>] [--npm-cache <path>] [--composer-cache <path>] [--extra-path <path>]... [--watch-path <path>]... [--yes]\n'
         + 'Usage: peanut create <absolute-target> --name <name> --slug <slug> --package <vendor/name> [--edition standalone|multi-tenant] [--application-version <semver>] [--ref <version>] [--channel stable|prerelease]\n'
         + '       peanut create <absolute-target> --name <name> --slug <slug> --package <vendor/name> --edition standalone|multi-tenant --archive <absolute-template.tgz> --manifest <absolute-template.json>\n'
+        + '       peanut create <absolute-target> --name <name> --slug <slug> --package <vendor/name> --edition multi-tenant --plan --module-release <tag> [--module-preset standard|minimal] [--module-channel stable|prerelease] [--modules <optional-key,...>]\n'
         + '       peanut doctor|status [--path <application>]\n'
         + '       peanut release [--path <scaffold>] [--version <semver>] [--core-php <version>] [--core-web <version>] [--with-local-core] [--output <path>] [--overwrite]\n'
         + '       peanut upgrade [--check|--plan] [--ref <version-or-tag>] [--channel stable|prerelease] [--confirm-major-upgrade] [--path <application>]\n'
@@ -112,6 +121,7 @@ function usage(topic = null) {
         + 'Create --demo none|workbench defaults to none; the selection is recorded and workbench data is seeded only during first installation.\n'
         + 'Standalone and multi-tenant are separate application artifacts and deployments; normal upgrades remain within the same Edition.\n'
         + 'Create defaults to the latest official stable template attachment. Local archives require their paired manifest. No Git clone, PHP, dependency installation, database or service operation occurs. Target must be absent or strictly empty, including hidden files.\n'
+        + 'MT create --plan stages the selected template and verified module catalog, then calls Code native composition planning. Use --module-php <absolute-php> and prepare the staged consumer native dependencies when missing. Resume with --composition-stage <returned-stage>; prepare with --plan-sha256 <reviewed-native-sha> instead of --plan. Only source-prepared consumers reach the target; database installation is separate. Offline input requires --module-index <absolute-json> --module-index-sha256 <trusted-sha> --module-channel prerelease and indexed TARs beside the index. Template and module channels are independent.\n'
         + 'Fixed-release APP discovery stays within the current major; development APP checks the latest published release. Applying a development source transition requires explicit --ref.\n'
         + 'Risk feature: cross-major upgrades may break custom business code, dependencies, APIs or migrations. Review the plan, keep a recoverable backup and resolve known risks before attempting apply.\n'
         + 'Cross-major apply requires --confirm-major-upgrade. AI/Agent operators must explain source to target, risks and plan and obtain human authorization before passing this flag; prior explicit authorization for this upgrade or a defined cross-major scope is sufficient, but generic development authorization is not.\n',
@@ -157,11 +167,19 @@ function parseCreateArguments(raw) {
         ['--name', 'name'], ['--slug', 'slug'], ['--package', 'package'], ['--edition', 'edition'],
         ['--profile', 'profile'], ['--workflow', 'workflow'], ['--demo', 'demo'], ['--application-version', 'applicationVersion'],
         ['--archive', 'archive'], ['--manifest', 'manifest'], ['--ref', 'ref'], ['--channel', 'channel'],
+        ['--module-preset', 'modulePreset'], ['--module-release', 'moduleRelease'], ['--module-channel', 'moduleChannel'],
+        ['--module-index', 'moduleIndex'], ['--module-index-sha256', 'moduleIndexSha256'], ['--modules', 'modules'],
+        ['--composition-stage', 'compositionStage'], ['--module-php', 'modulePhp'], ['--plan-sha256', 'planSha256'],
     ]);
     for (let index = 1; index < raw.length; index += 1) {
         const argument = raw[index];
         const equals = argument.indexOf('=');
         const flag = equals === -1 ? argument : argument.slice(0, equals);
+        if (flag === '--plan') {
+            if (equals !== -1 || values.plan !== undefined) throw new Error('PEANUT_CREATE_ARGUMENTS_INVALID');
+            values.plan = true;
+            continue;
+        }
         const key = map.get(flag);
         if (!key || Object.prototype.hasOwnProperty.call(values, key)) throw new Error('PEANUT_CREATE_ARGUMENTS_INVALID');
         const value = equals === -1 ? (raw[++index] ?? '') : argument.slice(equals + 1);
@@ -268,8 +286,9 @@ async function main() {
     }
     if (process.argv[2] === 'create') {
         const createOptions = await chooseCreateEdition(parseCreateArguments(process.argv.slice(3)));
-        output(await createProject(createOptions));
-        return 0;
+        const result = await createProject(createOptions);
+        output(result);
+        return result.status === 'blocked' ? 1 : 0;
     }
     if (process.argv[2] === 'upgrade') {
         const result = await upgradeProject(parseUpgradeArguments(process.argv.slice(3)));
@@ -377,16 +396,30 @@ async function main() {
         return 0;
     }
 
+    const hostPath = projectPath(root, '.local/toolchain/host.json');
+    const host = regularFile(hostPath) ? readJsonObject(hostPath) : null;
+    // A configured APP uses its own selected toolchain, not the shell's PATH.
+    const toolAvailable = (name) => {
+        if (!host) return commandExists(name);
+        const argv = host.commands?.[name];
+        if (!Array.isArray(argv) || argv.length === 0
+            || argv.some(item => typeof item !== 'string' || item === '')) return false;
+        const executable = path.resolve(root, host.path_base ?? '.', argv[0]);
+        const result = spawnSync(executable, [...argv.slice(1), '--version'], {
+            stdio: 'ignore', timeout: 10000, shell: false,
+        });
+        return result.status === 0;
+    };
     const checks = {
         ...phpEnvironmentChecks(),
-        tool_node: commandExists('node'),
-        tool_npm: commandExists('npm'),
-        tool_pnpm: commandExists('pnpm'),
+        tool_node: toolAvailable('node'),
+        tool_npm: toolAvailable('npm'),
+        tool_pnpm: toolAvailable('pnpm'),
     };
     for (const file of [
         'server/composer.json', 'server/composer.lock', 'web/package.json', 'web/pnpm-lock.yaml',
         'modules.lock', 'RELEASE_METADATA.json', 'resources/project-resources.json',
-        'scripts/project-composer', 'scripts/upgrade',
+        'scripts/project-composer', 'scripts/scaffold-upgrade',
     ]) {
         const target = projectPath(root, file);
         checks[file] = regularFile(target);
