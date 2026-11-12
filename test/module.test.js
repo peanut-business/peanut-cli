@@ -7,7 +7,7 @@ import { gunzipSync } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { parseModuleArguments, runModule, checkModuleUpdates } from '../lib/module.js';
-import { MODULE_INDEX, MODULE_REPOSITORY, moduleCandidates } from '../lib/module-release.js';
+import { MODULE_INDEX, MODULE_REPOSITORY, moduleCandidates, downloadModule, publishedModuleIndex, readModuleIndex } from '../lib/module-release.js';
 import { sha256 } from '../lib/protocol.js';
 import { archive } from './helpers/template-fixture.js';
 
@@ -63,12 +63,16 @@ if (dryRun) {
     const fetcher = async (url) => {
         calls.push(url);
         if (url === `${api}?per_page=100&page=1`) return { ok: true, json: async () => structuredClone(releases) };
+        if (url.startsWith(`${api}/tags/`)) {
+            const tag = decodeURIComponent(url.slice(`${api}/tags/`.length));
+            return { ok: true, json: async () => structuredClone(releases.find((item) => item.tag_name === tag)) };
+        }
         assert.ok(bytes.has(url), `unexpected network request: ${url}`);
         return { ok: true, arrayBuffer: async () => bytes.get(url) };
     };
-    function add(version, { key = 'peanut.file', prerelease = version.includes('-'), ...overrides } = {}, mutateTar) {
+    function add(version, { key = 'peanut.file', prerelease = version.includes('-'), tag: selectedTag, ...overrides } = {}, mutateTar) {
         const id = releases.length + 1;
-        const tag = 'bundle-' + id;
+        const tag = selectedTag ?? 'bundle-' + id;
         const base = `https://github.com/${MODULE_REPOSITORY}/releases/download/${tag}/`;
         const name = `${key}-${version}.tar`;
         const tar = moduleTar(version, key, mutateTar);
@@ -133,6 +137,38 @@ test('module update discovery fails on conflicting immutable version identities'
     other.index.modules[0].sha256 = 'a'.repeat(64);
     other.seal();
     await assert.rejects(() => checkModuleUpdates(f.root, 'prerelease', f.fetcher), /VERSION_IDENTITY_CONFLICT/);
+});
+
+test('v2 catalog downloads unchanged archives only from the immutable original Release', async (t) => {
+    const f = fixture(t);
+    const origin = f.add('1.0.47', { tag: 'v1.0.0-rc.1', immutable: true, prerelease: true });
+    const snapshot = f.add('1.0.47', { tag: 'v1.0.0-rc.2', immutable: true, prerelease: true });
+    snapshot.index.schema_version = 2;
+    snapshot.index.protocol = 'peanut.module-release-index.v2';
+    snapshot.index.modules[0].artifact_tag = origin.release.tag_name;
+    snapshot.index.modules[0].source_sha256 = 'b'.repeat(64);
+    snapshot.seal();
+    snapshot.release.assets = snapshot.release.assets.filter((item) => item.name === MODULE_INDEX);
+    const verified = await publishedModuleIndex(snapshot.release, f.fetcher);
+    const candidate = { ...verified.index.modules['peanut.file'], release: snapshot.release };
+    const cache = new Map();
+    assert.deepEqual(await downloadModule(candidate, 'peanut.file', f.fetcher, cache), origin.tar);
+    await downloadModule(candidate, 'peanut.file', f.fetcher, cache);
+    assert.equal(f.calls.filter((url) => url === origin.base + MODULE_INDEX).length, 1);
+    assert.equal(f.calls.some((url) => url === snapshot.base + snapshot.name), false);
+    assert.equal(snapshot.release.assets.length, 1);
+});
+
+test('v2 references fail closed on altered origin metadata, missing immutability or protocol confusion', async (t) => {
+    const f = fixture(t);
+    const origin = f.add('1.0.47', { tag: 'v1.0.0-rc.1', immutable: true, prerelease: true });
+    const newer = f.add('1.0.47', { tag: 'v1.0.0-rc.2', immutable: true, prerelease: true });
+    const row = { ...newer.index.modules[0], artifact_tag: 'v1.0.0-rc.1', source_sha256: 'c'.repeat(64) };
+    await assert.rejects(() => downloadModule({ ...row, bytes: row.bytes + 1, release: newer.release }, row.key, f.fetcher), /REFERENCE_IDENTITY_MISMATCH/);
+    origin.release.immutable = false;
+    await assert.rejects(() => downloadModule({ ...row, release: newer.release }, row.key, f.fetcher), /REFERENCE_RELEASE_INVALID/);
+    newer.index.modules[0] = row;
+    assert.throws(() => readModuleIndex(encode(newer.index), newer.release), /REFERENCE_REQUIRES_V2/);
 });
 
 test('online upgrade independently selects the highest stable module across multi-module Releases', async (t) => {
