@@ -6,7 +6,7 @@ import { spawnSync } from 'node:child_process';
 import { gunzipSync } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
-import { parseModuleArguments, runModule } from '../lib/module.js';
+import { parseModuleArguments, runModule, checkModuleUpdates } from '../lib/module.js';
 import { MODULE_INDEX, MODULE_REPOSITORY, moduleCandidates } from '../lib/module-release.js';
 import { sha256 } from '../lib/protocol.js';
 import { archive } from './helpers/template-fixture.js';
@@ -95,6 +95,45 @@ if (dryRun) {
     return { root, releases, bytes, calls, fetcher, add, nativeCalls, run,
         applied: () => fs.existsSync(path.join(root, '.local/applied.json')) };
 }
+
+test('module updates compares pinned versions using verified catalogs without PHP, local tool registration or writes', async (t) => {
+    const f = fixture(t);
+    fs.mkdirSync(path.join(f.root, '.peanut'), { recursive: true });
+    fs.writeFileSync(path.join(f.root, '.peanut/application-manifest.json'), JSON.stringify({ edition: { name: 'standalone' } }));
+    fs.writeFileSync(path.join(f.root, 'modules.lock'), JSON.stringify({ schema_version: 1,
+        modules: [{ key: 'peanut.file', version: '1.0.40' }, { key: 'custom.client', version: '1.0.0' }] }));
+    fs.rmSync(path.join(f.root, '.local/toolchain/host.json'));
+    const newer = f.add('1.0.47');
+    f.add('1.1.0-rc.1');
+    const stable = await checkModuleUpdates(f.root, 'stable', f.fetcher);
+    assert.equal(stable.updates_available, 1);
+    assert.deepEqual(stable.modules.map(({ key, status, installed_version, available_version }) =>
+        ({ key, status, installed_version, available_version })), [
+        { key: 'peanut.file', status: 'update_available', installed_version: '1.0.40', available_version: '1.0.47' }]);
+    assert.equal(stable.modules[0].available_sha256, sha256(newer.tar));
+    assert.equal(stable.changed, false);
+    assert.deepEqual(f.nativeCalls(), []);
+    assert.equal(f.applied(), false);
+    const prerelease = await checkModuleUpdates(f.root, 'prerelease', f.fetcher);
+    assert.equal(prerelease.modules[0].available_version, '1.1.0-rc.1');
+    assert.equal(prerelease.catalog_tags.length, 2);
+    await assert.rejects(() => checkModuleUpdates(f.root, 'unknown', f.fetcher), /CHANNEL_INVALID/);
+    assert.deepEqual(parseModuleArguments(['updates', '--channel', 'prerelease', '--root', f.root]),
+        { operation: 'updates', arguments: ['--channel', 'prerelease'], root: f.root });
+});
+
+test('module update discovery fails on conflicting immutable version identities', async (t) => {
+    const f = fixture(t);
+    fs.mkdirSync(path.join(f.root, '.peanut'), { recursive: true });
+    fs.writeFileSync(path.join(f.root, '.peanut/application-manifest.json'), JSON.stringify({ edition: { name: 'multi-tenant' } }));
+    fs.writeFileSync(path.join(f.root, 'modules.lock'), JSON.stringify({ schema_version: 1,
+        modules: [{ key: 'peanut.file', version: '1.0.40' }] }));
+    f.add('1.0.47');
+    const other = f.add('1.0.47');
+    other.index.modules[0].sha256 = 'a'.repeat(64);
+    other.seal();
+    await assert.rejects(() => checkModuleUpdates(f.root, 'prerelease', f.fetcher), /VERSION_IDENTITY_CONFLICT/);
+});
 
 test('online upgrade independently selects the highest stable module across multi-module Releases', async (t) => {
     const f = fixture(t);

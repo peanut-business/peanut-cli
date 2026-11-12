@@ -26,6 +26,7 @@ function usage(topic = null) {
             + `操作：${MODULE_OPERATIONS.join(', ')}\n\n`
             + '默认在当前 APP 根执行；--root 自身相对当前工作目录解析。本地包及其他操作的参数原样传给 APP，操作参数帮助使用 peanut module <operation> --help。\n'
             + '在线：peanut module upgrade|install peanut.file [--version 1.0.47] [--channel stable|prerelease] [--root APP]\n'
+            + '发现更新：peanut module updates [--channel stable|prerelease] [--root APP]（只读、无需本机 PHP/环境登记；安装仍须原生预检）。\n'
             + 'upgrade 支持 --dry-run；install 原生入口尚不支持 dry-run，显式请求将拒绝。\n'
             + '在线默认选择最高兼容稳定模块版本；精确 RC 也必须 --channel prerelease。仅使用 peanut-opensource/peanut-module-code 已发布 Release 的 module-release-index.json 和 tar 附件，并按 GitHub API assets[].digest 验证两者。缓存位于 APP .local/module-downloads，每次重新下载验 SHA；原生预检和受控写入负责 Edition、依赖、权限及已安装版本，禁止降级。\n'
             + '复用 APP scripts/project-env 和 .local/toolchain/host.json 中选择的 PHP，通过 JSON stdin 调用 server/module，无需启动 HTTP 服务。首次使用先运行 peanut config。\n'
@@ -95,6 +96,7 @@ function usage(topic = null) {
         + '       peanut module <operation> [args] [--root <application>]\n'
         + '       peanut module upgrade peanut.file [--version <semver>] [--channel stable|prerelease] [--dry-run] [--root <application>]\n'
         + '       peanut module install peanut.file [--version <semver>] [--channel stable|prerelease] [--root <application>]\n'
+        + '       peanut module updates [--channel stable|prerelease] [--root <application>]\n'
         + '       peanut config [--path <project-root>] [--php <path>] [--node <path>] [--npm <path>] [--pnpm <path>] [--composer <path>] [--python <path>] [--core-php <path>] [--core-web <path>] [--release <path>] [--backups <path>] [--pnpm-cache <path>] [--npm-cache <path>] [--composer-cache <path>] [--extra-path <path>]... [--watch-path <path>]... [--yes]\n'
         + 'Usage: peanut create <absolute-target> --name <name> --slug <slug> --package <vendor/name> [--edition standalone|multi-tenant] [--application-version <semver>] [--ref <version>] [--channel stable|prerelease]\n'
         + '       peanut create <absolute-target> --name <name> --slug <slug> --package <vendor/name> --edition standalone|multi-tenant --archive <absolute-template.tgz> --manifest <absolute-template.json>\n'

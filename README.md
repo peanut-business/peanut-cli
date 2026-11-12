@@ -55,6 +55,7 @@ peanut recipe add scaffold-ci --path /absolute/peanut-admin-code
 ```sh
 peanut help module
 peanut module check --root /absolute/app
+peanut module updates --channel prerelease --root /absolute/app
 peanut module create --help --root /absolute/app
 peanut module pack --help --root /absolute/app
 peanut module pack peanut.chart --output /absolute/release/modules/peanut.chart-1.0.3.tar --root /absolute/module-app
@@ -65,6 +66,16 @@ peanut module upgrade peanut.file --version 1.0.47 --root /absolute/consumer-app
 peanut module upgrade peanut.file --version 1.0.48-rc.1 --channel prerelease --root /absolute/consumer-app
 peanut module install peanut.file --root /absolute/consumer-app
 ```
+
+`peanut module updates` reads the current APP's `modules.lock` and published,
+digest-verified official module catalog and reports which installed modules have
+newer versions. It is **read-only**, requires no PHP/DB or local environment
+registration, ignores custom modules, and defaults to stable-only discovery.
+Use `--channel prerelease` to opt into RC versions. The result is not a
+compatibility guarantee: `peanut module upgrade <key> --dry-run` remains the
+native Edition, dependency, authorization and runtime admission check.
+To check the independent Scaffold release use `peanut upgrade --check --path
+/absolute/app`; a newer Scaffold does not silently upgrade installed modules.
 
 公开入口为 `peanut module <operation> [参数] [--root <APP目录>]`，支持 `create`、`check`、`compile`、`pack`、`adopt`、`install`、`upgrade`、`disable`、`uninstall`、`sync`、`reconcile`、`make`、`lock`、`release-composition`、`work`。默认使用当前目录作为 APP 根；`--root` 可用相对或绝对路径，自身相对当前工作目录解析。本地 tar 与其他操作仍只消费 `--root`，其余参数按原顺序交给 APP；`--` 后不再解析 `--root`。各原生操作参数以 `peanut module <operation> --help` 为准；在线参数见 `peanut help module`。
 
