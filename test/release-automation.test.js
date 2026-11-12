@@ -28,7 +28,9 @@ const args = process.argv.slice(2), root = args[args.indexOf('--root') + 1];
 const controlPath = path.join(root, '.local/control.json');
 const control = fs.existsSync(controlPath) ? JSON.parse(fs.readFileSync(controlPath)) : {};
 if (args.includes('doctor')) {
-  console.log(JSON.stringify({status:'ok',writes:false,tools:{node:{version:control.environment || process.versions.node,argv:[process.execPath]}}}));
+  const fingerprint = crypto.createHash('sha256').update(JSON.stringify({version:control.environment || process.versions.node,
+    cache:control.cache || 'default',extra_path:control.extra_path || [],phprc:control.phprc || ''})).digest('hex');
+  console.log(JSON.stringify({status:'ok',writes:false,fingerprint,tools:{node:{version:control.environment || process.versions.node,argv:[process.execPath]}}}));
   process.exit(0);
 }
 const child = args.slice(args.indexOf('--') + 1);
@@ -75,12 +77,26 @@ test('release plan is read-only; repeated completed release reuses the identical
     const first = f.run();
     assert.equal(first.status, 'released');
     assert.equal(f.calls().length, 2);
-    fs.unlinkSync(path.join(f.root, '.local/toolchain/host.json'));
     const second = f.run();
     assert.equal(second.status, 'reused');
     assert.deepEqual(second.packages, first.packages);
     assert.equal(f.calls().length, 2);
     assert.equal(f.run({ plan: true }).status, 'no_build_needed');
+    fs.unlinkSync(path.join(f.root, '.local/toolchain/host.json'));
+    assert.throws(() => f.run(), /PEANUT_MODULE_CONFIG_REQUIRED|ENVIRONMENT_NOT_READY/);
+    assert.equal(f.run({ plan: true }).status, 'no_build_needed');
+    assert.equal(f.calls().length, 2);
+});
+
+test('completed originals remain intact but cannot reuse a changed native execution fingerprint', t => {
+    const f = fixture(t);
+    const result = f.run();
+    const originalSha = result.packages[0].archive.sha256;
+    f.write('.local/control.json', { cache: 'other-cache', phprc: 'other-ini', extra_path: ['/other/tool/bin'] });
+    assert.throws(() => f.run(), /COMPLETED_RELEASE_ENVIRONMENT_CHANGED/);
+    assert.equal(f.calls().length, 2);
+    assert.equal(f.state().value.status, 'complete');
+    assert.equal(f.state().value.result.packages[0].archive.sha256, originalSha);
 });
 
 test('known failed MT build resumes only MT and retains original failed files', t => {
@@ -128,6 +144,9 @@ test('changed source, environment and unknown native outcomes cannot reuse old v
     f.write('.local/control.json', { failEdition: 'multi-tenant' });
     assert.throws(() => f.run(), /COMMAND_FAILED/);
     f.write('.local/control.json', { environment: '999.0.0' });
+    assert.throws(() => f.run({ resume: true }), /RESUME_ENVIRONMENT_CHANGED/);
+    assert.equal(f.calls().length, 2);
+    f.write('.local/control.json', { cache: 'another-store' });
     assert.throws(() => f.run({ resume: true }), /RESUME_ENVIRONMENT_CHANGED/);
     assert.equal(f.calls().length, 2);
     f.write('.local/control.json', {});
