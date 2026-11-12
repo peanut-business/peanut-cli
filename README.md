@@ -2,6 +2,27 @@
 
 Peanut CLI 是独立版本的 `peanut` 命令行工具，负责 Peanut 应用模板、环境配置、诊断、升级、模块工程和 Recipe 管理。
 
+## 发布自动化与脚手架能力协商
+
+当前实现扩展既有入口，不另建发布服务。以下功能要求 CLI 与目标脚手架分别包含相应实现；源码 `dev` 已支持不等于 npm/GitHub 已发行或目标 APP 已升级，使用前读取 `peanut --version`、`peanut help release` 和应用的工具协议声明。
+
+```sh
+peanut doctor --path /absolute/code
+peanut release --plan --path /absolute/code
+peanut release --path /absolute/code
+peanut release --resume --path /absolute/code
+peanut module updates --channel prerelease --root /absolute/app
+peanut upgrade --check --path /absolute/app
+```
+
+`release --plan` 只读列出本次版本、来源选择、相关输入指纹、已有制品和待执行阶段，不安装依赖、不写操作状态。正常 release 首次准备并生产双 Edition；同一输入已有完整原件时重核字节后返回 `reused`。已知失败用 `--resume` 沿原工作区继续：ST 已成功、MT 失败时不重打 ST；原生依赖/生成阶段也保留完成证据。改变源码、工具/依赖输入或污染已完成输出会拒绝复用。未知仍在途结果不自动重提交。已发布版本永远不覆盖，本地 `--overwrite` 也不是改写公共 Release 的授权。
+
+目标脚手架的 `execution_protocol` 支持 `peanut.project-env.v2` 时，诊断和原生命令自动走其 `doctor` / `run`，不再强制每个工作区有 host.json。已有本机配置、显式共享 `PEANUT_TOOLCHAIN_PROFILE`、环境覆盖和自动发现按该原生合同验证；只有缺工具或明确配置漂移才需人工修正。`config` 保留为需要绑定特殊工具、本地 Core 或自定输出路径时的可选入口。历史脚手架继续其原 config/prepare/exec 合同，不把新版 CLI 冒充上游升级。
+
+官方模块目录同时读取 v1 和增量 v2。v2 的未变化 TAR 直接引用原不可变 Release；CLI 验证引用源目录、API digest、模块身份和实际字节，不接受引用链或未知/可变来源。新目录发布前须先交付支持该协议的 CLI 与脚手架；旧 v1 目录无需重发。CLI 只负责编排与协议验证，Edition、依赖、权限、迁移和任务幂等仍由 APP 原生入口裁决。
+
+检测升级只提供公开候选，不伪称数据库已安装；`module updates` 无 PHP/数据库依赖，真正安装升级继续调用原生受控入口。完整消费者运行及跨租户验收与发布自动化自身测试分别记录。
+
 ## 1. 安装与工作目录
 
 开发期从 CLI 仓库安装或更新：

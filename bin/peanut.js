@@ -15,6 +15,7 @@ import { upgradeProject } from '../lib/upgrade-project.js';
 import { parseCollaborationArguments, serviceCollaboration } from '../lib/service-collaboration.js';
 import { configureProject } from '../lib/configure.js';
 import { MODULE_OPERATIONS, parseModuleArguments, runModule } from '../lib/module.js';
+import { automaticEnvironment, inspectEnvironment } from '../lib/project-environment.js';
 
 const toolRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const CLI_VERSION = readJsonObject(path.join(toolRoot, 'package.json')).version;
@@ -275,8 +276,9 @@ async function main() {
     }
     if (process.argv[2] === 'release') {
         if (process.argv.slice(3).some((item) => ['--help', '-h'].includes(item))) { usage('release'); return 0; }
-        output(await buildProject(process.argv[2], parseBuildArguments(process.argv.slice(3))));
-        return 0;
+        const result = await buildProject(process.argv[2], parseBuildArguments(process.argv.slice(3)));
+        output(result);
+        return ['blocked', 'failed', 'resume_required'].includes(result.status) ? 1 : 0;
     }
     if (process.argv[2] === 'service') {
         if (process.argv[3] !== 'collaboration') throw new Error('PEANUT_SERVICE_UNSUPPORTED');
@@ -410,11 +412,10 @@ async function main() {
         });
         return result.status === 0;
     };
-    const checks = {
-        ...phpEnvironmentChecks(),
-        tool_node: toolAvailable('node'),
-        tool_npm: toolAvailable('npm'),
-        tool_pnpm: toolAvailable('pnpm'),
+    const environment = automaticEnvironment(root) ? inspectEnvironment(root) : null;
+    const checks = environment ? { native_environment: environment.status === 'ok' } : {
+        ...phpEnvironmentChecks(), tool_node: toolAvailable('node'),
+        tool_npm: toolAvailable('npm'), tool_pnpm: toolAvailable('pnpm'),
     };
     for (const file of [
         'server/composer.json', 'server/composer.lock', 'web/package.json', 'web/pnpm-lock.yaml',
@@ -436,6 +437,7 @@ async function main() {
         status: ok ? 'ok' : 'incomplete',
         scope: 'local tooling and metadata; no dependency install, network or runtime health check',
         checks,
+        ...(environment ? { environment } : {}),
     });
     return ok ? 0 : 1;
 }
