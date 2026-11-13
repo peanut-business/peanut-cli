@@ -30,7 +30,7 @@ function usage(topic = null) {
             + '发现更新：peanut module updates [--channel stable|prerelease] [--root APP]（只读、无需本机 PHP/环境登记；安装仍须原生预检）。\n'
             + 'upgrade 支持 --dry-run；install 原生入口尚不支持 dry-run，显式请求将拒绝。\n'
             + '在线默认选择最高兼容稳定模块版本；精确 RC 也必须 --channel prerelease。仅使用 peanut-opensource/peanut-module-code 已发布 Release 的 module-release-index.json 和 tar 附件，并按 GitHub API assets[].digest 验证两者。缓存位于 APP .local/module-downloads，每次重新下载验 SHA；原生预检和受控写入负责 Edition、依赖、权限及已安装版本，禁止降级。\n'
-            + '复用 APP scripts/project-env 和 .local/toolchain/host.json 中选择的 PHP，通过 JSON stdin 调用 server/module，无需启动 HTTP 服务。首次使用先运行 peanut config。\n'
+            + '模块操作复用 APP scripts/project-env 选择 PHP，并通过 JSON stdin 调用 server/module，无需 HTTP 服务。新协议 v2 自动发现已安装工具，无需首次运行 peanut config；仅旧 APP 的本机 host 或需要指定特殊工具/Core 时才运行 peanut config。\n'
             + '模块包默认输出至 APP 配置 paths.release 下的 modules（默认 release/modules）；相对发行路径以 APP 根解析。操作结果和退出码由 APP 返回。\n',
         );
         return;
