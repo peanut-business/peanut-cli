@@ -220,6 +220,7 @@ if ($command === 'template-plan') {
                 'workflow_paths_sha256' => array_key_exists('workflow', $app['application']) ? null : hash('sha256', '[]'),
                 'excluded_paths_sha256' => hash('sha256', '[]')]],
         'manifest_paths' => ['to' => $options['template-manifest']]];
+    if ($variant === 'ready') { $plan['status'] = 'ready'; $plan['actions'] = [['conflict' => false]]; }
     if ($variant === 'missing') unset($plan['identity']['source_relation']);
     if ($variant === 'relation') $plan['identity']['source_relation']['base']['commit'] = str_repeat('f', 40);
     if ($variant === 'checkout') $plan['identity']['source_selection']['source_checkout'] = '/wrong';
@@ -438,6 +439,51 @@ test('saved plans reject outside state and parser rejects mixed selections and r
     await assert.rejects(upgradeProject({ path: f.options.target, recoverPlan: '../outside.json' }), /PLAN_OUTSIDE_STATE/);
     const bin = fileURLToPath(new URL('../bin/peanut.js', import.meta.url));
     for (const args of [['--prepare-engine'], ['--archive'], ['--plan', '--check'], ['--apply-plan', 'x', '--archive', '/x']]) {
+        const result = spawnSync(process.execPath, [bin, 'upgrade', ...args], { encoding: 'utf8' });
+        assert.equal(result.status, 2);
+        assert.match(result.stderr, /ARGUMENTS_INVALID/);
+    }
+});
+
+test('upgrade --yes runs plan, apply and verify automatically only when ready and confirmed', async (t) => {
+    const blocked = await developmentBindingFixture(t);
+    const blockedResult = await upgradeProject({ ...blocked.upgrade, yes: true }, offline);
+    assert.equal(blockedResult.status, 'blocked');
+    assert.deepEqual(
+        fs.readFileSync(path.join(blocked.options.target, 'consumer-calls.jsonl'), 'utf8').trim().split('\n').map(JSON.parse).map(([c]) => c),
+        ['template-plan'],
+    );
+
+    const major = await developmentBindingFixture(t, 'ready');
+    const majorManifest = JSON.parse(fs.readFileSync(major.manifestPath, 'utf8'));
+    majorManifest.template.version = '4.0.0';
+    fs.writeFileSync(major.manifestPath, JSON.stringify(majorManifest));
+    const majorPending = await upgradeProject({ ...major.upgrade, yes: true }, offline);
+    assert.equal(majorPending.status, 'confirmation_required');
+    assert.equal(majorPending.risk, 'major_version_change');
+    assert.deepEqual(
+        fs.readFileSync(path.join(major.options.target, 'consumer-calls.jsonl'), 'utf8').trim().split('\n').map(JSON.parse).map(([c]) => c),
+        ['template-plan'],
+    );
+
+    const majorConfirmed = await upgradeProject({ ...major.upgrade, yes: true, confirmMajorUpgrade: true }, offline);
+    assert.equal(majorConfirmed.status, 'verified');
+    assert.deepEqual(
+        fs.readFileSync(path.join(major.options.target, 'consumer-calls.jsonl'), 'utf8').trim().split('\n').map(JSON.parse).map(([c]) => c),
+        ['template-plan', 'template-plan', 'apply', 'verify'],
+    );
+
+    const ready = await developmentBindingFixture(t, 'ready');
+    const bin = fileURLToPath(new URL('../bin/peanut.js', import.meta.url));
+    const cliReady = spawnSync(process.execPath, [bin, 'upgrade', '--path', ready.options.target, '--archive', ready.upgrade.archive, '--manifest', ready.upgrade.manifest, '--source-checkout', ready.checkout, '--yes'], { encoding: 'utf8' });
+    assert.equal(cliReady.status, 0, cliReady.stderr);
+    assert.equal(JSON.parse(cliReady.stdout).status, 'verified');
+    assert.deepEqual(
+        fs.readFileSync(path.join(ready.options.target, 'consumer-calls.jsonl'), 'utf8').trim().split('\n').map(JSON.parse).map(([c]) => c),
+        ['template-plan', 'apply', 'verify'],
+    );
+
+    for (const args of [['--yes', '--plan'], ['--yes', '--check'], ['--yes=1']]) {
         const result = spawnSync(process.execPath, [bin, 'upgrade', ...args], { encoding: 'utf8' });
         assert.equal(result.status, 2);
         assert.match(result.stderr, /ARGUMENTS_INVALID/);

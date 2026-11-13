@@ -104,8 +104,8 @@ function usage(topic = null) {
         + '       peanut create <absolute-target> --name <name> --slug <slug> --package <vendor/name> --edition multi-tenant --plan --module-release <tag> [--module-preset standard|minimal] [--module-channel stable|prerelease] [--modules <optional-key,...>]\n'
         + '       peanut doctor|status [--path <application>]\n'
         + '       peanut release [--path <scaffold>] [--version <semver>] [--core-php <version>] [--core-web <version>] [--with-local-core] [--output <path>] [--overwrite]\n'
-        + '       peanut upgrade [--check|--plan] [--ref <version-or-tag>] [--channel stable|prerelease] [--confirm-major-upgrade] [--path <application>]\n'
-        + '       peanut upgrade [--check|--plan] --archive <absolute-template.tgz> --manifest <absolute-template.json> [--source-checkout <absolute-official-source>] [--baseline-mode-manifest <exact-old-release.json>] [--path <application>]\n'
+        + '       peanut upgrade [--check|--plan|--yes] [--ref <version-or-tag>] [--channel stable|prerelease] [--confirm-major-upgrade] [--path <application>]\n'
+        + '       peanut upgrade [--check|--plan|--yes] --archive <absolute-template.tgz> --manifest <absolute-template.json> [--source-checkout <absolute-official-source>] [--baseline-mode-manifest <exact-old-release.json>] [--path <application>]\n'
         + '       peanut upgrade --apply-plan <plan> [--confirm-plan-sha256 <digest> --preserve-paths <paths|-> --replace-paths <paths|->] [--confirm-major-upgrade] [--path <application>]\n'
         + '       peanut upgrade --recover-plan <plan> [--path <application>]\n'
         + '       Upgrade coordinator override: --coordinator-root <canonical-git-root> --coordinator-commit <40hex> --installation-source-commit <40hex> (all required; persisted for apply/recover).\n'
@@ -233,7 +233,7 @@ function parseUpgradeArguments(raw) {
         ['--source-checkout', 'sourceCheckout'],
         ['--coordinator-root', 'coordinatorRoot'], ['--coordinator-commit', 'coordinatorCommit'],
         ['--installation-source-commit', 'installationSourceCommit'],
-        ['--check', 'check'], ['--plan', 'plan'], ['--confirm-major-upgrade', 'confirmMajorUpgrade'],
+        ['--check', 'check'], ['--plan', 'plan'], ['--yes', 'yes'], ['--confirm-major-upgrade', 'confirmMajorUpgrade'],
     ]);
     for (let index = 0; index < raw.length; index += 1) {
         const argument = raw[index];
@@ -241,7 +241,7 @@ function parseUpgradeArguments(raw) {
         const flag = equals === -1 ? argument : argument.slice(0, equals);
         const key = map.get(flag);
         if (!key || Object.hasOwn(values, key)) throw new Error('PEANUT_UPGRADE_ARGUMENTS_INVALID');
-        if (key === 'check' || key === 'plan' || key === 'confirmMajorUpgrade') {
+        if (key === 'check' || key === 'plan' || key === 'yes' || key === 'confirmMajorUpgrade') {
             if (equals !== -1) throw new Error('PEANUT_UPGRADE_ARGUMENTS_INVALID');
             values[key] = true;
         } else {
@@ -250,7 +250,7 @@ function parseUpgradeArguments(raw) {
             values[key] = value;
         }
     }
-    if ([values.check, values.plan, values.applyPlan, values.recoverPlan].filter(Boolean).length > 1
+    if ([values.check, values.plan, values.applyPlan, values.recoverPlan, values.yes].filter(Boolean).length > 1
         || ((values.applyPlan || values.recoverPlan) && (values.ref || values.channel || values.archive || values.manifest || values.baselineModeManifest || values.sourceCheckout))
         || (values.sourceCheckout && (!values.archive || !values.manifest || values.ref || values.channel))
         || ((values.confirmPlanSha256 || values.preservePaths || values.replacePaths) && !values.applyPlan)) {
