@@ -1,6 +1,6 @@
-# MT create and native source composition
+# ST/MT create and native source composition
 
-CLI selects and verifies inputs, stages an uninstalled MT consumer, and calls the template's `server/module` JSON bridge. Code alone resolves dependencies and promotes module source and `modules.lock`. There is no CLI resolver, installer, database bootstrap or implicit switch to another release. ST composition is deferred. Ordinary create without composition options retains its existing template rendering behavior.
+CLI selects and verifies inputs, stages an uninstalled ST or MT consumer, and calls the template's `server/module` JSON bridge. Code alone resolves dependencies and promotes module source and `modules.lock`. There is no CLI resolver, installer, database bootstrap or implicit switch to another release. Ordinary create without composition options retains its existing template rendering behavior.
 
 ## Fixed inputs
 
@@ -19,7 +19,7 @@ Run create with all existing application/template arguments plus:
 --module-php /absolute/selected/php
 ```
 
-The result returns `composition_stage`, `staged_application`, original index SHA, template/source identity and `composition_request`. The private stage lives beside the target on the same filesystem. It contains the rendered application, verified archives, original index, request and native result. The target remains absent or empty. Planning writes no module source transaction, module lock or database state. The staged server environment is an owner-only ordinary file with explicit `APP_ENV=development` and `DEPLOYMENT_MODE=multi-tenant`.
+The result returns `composition_stage`, `staged_application`, original index SHA, template/source identity and `composition_request`. The private stage lives beside the target on the same filesystem. It contains the rendered application, verified archives, original index, request and native result. The target remains absent or empty. Planning writes no module source transaction, module lock or database state. The staged server environment is an owner-only ordinary file with explicit `APP_ENV=development` and `DEPLOYMENT_MODE=<selected template Edition>`.
 
 The request is Code's `peanut.module-source-composition-request.v1`, sent as stdin `{"operation":"adopt","arguments":["--composition","/absolute/composition.json"]}`. `composition_sha256` binds the template's exact config bytes; index path/SHA/repository/tag/commit bind the unchanged downloaded index; `archives` maps every supplied catalog key to its verified TAR. Code uses its safe source-only bootstrap, without AppService, business Module or database initialization.
 
@@ -39,6 +39,6 @@ CLI requires the saved ready plan; Code recomputes it inside the original writer
 
 All blocked/error paths retain the original stage. `native-result.json` records the exact exit, stderr, parsed response and recovery handle. An unparseable/unknown response is saved in `native-output.json`; inspect its existing journal before resubmitting anything. Native nonzero exits retain `error`, diagnostics, transaction, completed writes, journal and `adopt --recover` arguments. Run that recovery through the same staged consumer's `server/module`, not another install or a fresh stage. Then re-plan and review the resulting current state before promotion. Do not delete a failed stage or its before-images.
 
-Current Code templates still include eight official modules and their native dependency inputs. `template_bundled_modules` reports the actual inventory count. This integration does not remove them or establish a thin template. A conflict between bundled sources and selected release bytes is a real native blocker; it must not be bypassed by deleting sources or rewriting locks. Uninstalled native dependency/API/compile orchestration and real MT first-install/HTTP acceptance remain separate work. No archived ST/MT applications, business instances, databases or production resources are operated by this command.
+Current Code ST/MT templates are thin: they retain the Host bridge and locked bootstrap dependencies but do not bundle official Module author source; their initial modules.lock is empty. `template_bundled_modules` reports the actual inventory count. Module sources are selected from the independently verified Module Release and admitted through the original Code source transaction. A conflict between bundled sources and selected release bytes is a real native blocker; it must not be bypassed by deleting sources or rewriting locks. Uninstalled native dependency/API/compile orchestration and real ST/MT first-install/HTTP acceptance and MT A/B isolation remain separate work. No archived ST/MT applications, business instances, databases or production resources are operated by this command.
 
 Tests distinguish CLI protocol stand-ins from the real Code native composition test. Neither proves public Release consumption by a fresh consumer with its own installed dependencies or real database/HTTP acceptance. Exact execution results and fixed inputs are recorded in the S3.2 result receipt.
