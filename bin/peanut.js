@@ -6,7 +6,7 @@ import { createInterface } from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
 import {
     commandExists, existingFileWithin, phpEnvironmentChecks, projectPath,
-    projectRoot, readJsonObject, validateReleaseVersions,
+    readJsonObject, resolveWorkingRoot, validateReleaseVersions,
 } from '../lib/protocol.js';
 import { RecipeManager } from '../lib/recipe-manager.js';
 import { createProject } from '../lib/create-project.js';
@@ -14,6 +14,7 @@ import { buildProject, parseBuildArguments } from '../lib/build-project.js';
 import { upgradeProject } from '../lib/upgrade-project.js';
 import { parseCollaborationArguments, serviceCollaboration } from '../lib/service-collaboration.js';
 import { configureProject } from '../lib/configure.js';
+import { parseCoreArguments, runCoreDev } from '../lib/core-dev.js';
 import { MODULE_OPERATIONS, parseModuleArguments, runModule } from '../lib/module.js';
 import { automaticEnvironment, inspectEnvironment } from '../lib/project-environment.js';
 
@@ -35,23 +36,40 @@ function usage(topic = null) {
         );
         return;
     }
+    if (topic === 'core') {
+        process.stdout.write(
+            '用法：peanut core [status|path|release] [选项]\npeanut help core\n\n'
+            + '查看或切换脚手架/模块维护仓（非已创建 APP）的 Core 依赖模式，支持从 code 根或任意子目录执行。\n\n'
+            + '操作：\n'
+            + '  status                            查看 PHP/Web Core 当前模式（local-path/release）与锁定版本同步状态（默认）\n'
+            + '  path (link|local)                 一键切换为本地 Core 源码 path 软链开发模式（不修改 Git 清单）\n'
+            + '  release (reset|unlink|fixed)      一键重置并同步回 composer.lock / package.json 锁定的正式发行版\n\n'
+            + '选项：\n'
+            + '  --path <目录>                     项目根（默认从当前目录向上自动查找）\n'
+            + '  --core-php <目录>                 指定本地 PHP Core 目录（仅 path 模式）\n'
+            + '  --core-web <目录>                 指定本地 Web Core 目录（仅 path 模式）\n'
+            + '  --client <all|web,platform,pc,uniapp>  仅操作或检查指定前端端（默认 all）\n',
+        );
+        return;
+    }
     if (topic === 'config') {
         process.stdout.write(
             '用法：peanut config [选项]\npeanut help config\n\n'
-            + '为当前 Peanut Admin Code 项目选择本机已安装工具，并写入忽略目录 .local/toolchain/host.json；随后调用现有 scripts/project-env prepare。不会安装软件或修改全局 PATH。\n\n'
+            + '为当前 Peanut Admin Code 项目或已创建应用选择本机已安装工具，并写入忽略目录 .local/toolchain/host.json；随后调用现有 scripts/project-env prepare。不会安装软件或修改全局 PATH。默认从当前目录向上查找所在项目根；对已创建应用（含 .peanut/application-manifest.json）仅配置单目录工具链，不探测或写入脚手架 Core/backups/release 配置。\n\n'
             + '路径基准：--path 自身相对当前工作目录解析；其余工具路径及 Core host 中的 commands/caches/extra_path/watch_paths 相对所选 Code 根。维护数据库登记和 SQL 快照只接受绝对路径。Core 目录可相对 Code 根输入，配置始终保存绝对路径；.local 配置不随 Git 合并，新工作区或目录位置变化后须重新 config 并指定当前 Core 位置。\n\n'
             + '选项：\n'
-            + '  --path <目录>                   Code 项目根，默认当前目录\n'
+            + '  --path <目录>                   Code 项目根，默认从当前目录向上查找\n'
             + '  --php <文件>                    PHP 可执行文件\n'
             + '  --node <文件>                   Node.js 可执行文件\n'
             + '  --npm <文件>                    npm 可执行文件\n'
             + '  --pnpm <文件>                   pnpm 可执行文件\n'
             + '  --composer <文件>               Composer 可执行文件或 PHAR\n'
             + '  --python <文件>                 Python 3 可执行文件\n'
-            + '  --core-php <目录>               本地 PHP Core 源码目录\n'
-            + '  --core-web <目录>               本地 Web Core 源码目录\n'
-            + '  --release <路径>                release 输出根，默认 release\n'
-            + '  --backups <路径>                backups 目录，首次默认 ../backups\n'
+            + '  --core-php <目录>               本地 PHP Core 源码目录（仅维护仓）\n'
+            + '  --core-web <目录>               本地 Web Core 源码目录（仅维护仓）\n'
+            + '  --core-mode <path|release>      配置后立即同步为本地 Core path 或正式发行版（仅维护仓）\n'
+            + '  --release <路径>                release 输出根，默认 release（仅维护仓）\n'
+            + '  --backups <路径>                backups 目录，首次默认 .local/backups（仅维护仓）\n'
             + '  --release-database-registry <绝对文件>  可选维护数据库登记，与下两项配套\n'
             + '  --release-database-resource <ID>       维护数据库稳定资源 ID\n'
             + '  --release-database-sql <绝对文件>       制包前原生 SQL 快照，必须在源码与制品外\n'
@@ -93,12 +111,13 @@ function usage(topic = null) {
     process.stdout.write(
         `Peanut CLI ${CLI_VERSION}\n`
         + 'Usage: peanut <command> [options]\n'
-        + '       peanut help [config|release|module]\n'
+        + '       peanut help [config|core|release|module]\n'
         + '       peanut module <operation> [args] [--root <application>]\n'
         + '       peanut module upgrade peanut.file [--version <semver>] [--channel stable|prerelease] [--dry-run] [--root <application>]\n'
         + '       peanut module install peanut.file [--version <semver>] [--channel stable|prerelease] [--root <application>]\n'
         + '       peanut module updates [--channel stable|prerelease] [--root <application>]\n'
-        + '       peanut config [--path <project-root>] [--php <path>] [--node <path>] [--npm <path>] [--pnpm <path>] [--composer <path>] [--python <path>] [--core-php <path>] [--core-web <path>] [--release <path>] [--backups <path>] [--pnpm-cache <path>] [--npm-cache <path>] [--composer-cache <path>] [--extra-path <path>]... [--watch-path <path>]... [--yes]\n'
+        + '       peanut config [--path <project-root>] [--php <path>] [--node <path>] [--npm <path>] [--pnpm <path>] [--composer <path>] [--python <path>] [--core-php <path>] [--core-web <path>] [--core-mode path|release] [--release <path>] [--backups <path>] [--pnpm-cache <path>] [--npm-cache <path>] [--composer-cache <path>] [--extra-path <path>]... [--watch-path <path>]... [--yes]\n'
+        + '       peanut core [status|path|release] [--path <project-root>] [--core-php <path>] [--core-web <path>] [--client <all|web,platform,pc,uniapp>]\n'
         + 'Usage: peanut create <absolute-target> --name <name> --slug <slug> --package <vendor/name> [--edition standalone|multi-tenant] [--application-version <semver>] [--ref <version>] [--channel stable|prerelease]\n'
         + '       peanut create <absolute-target> --name <name> --slug <slug> --package <vendor/name> --edition standalone|multi-tenant --archive <absolute-template.tgz> --manifest <absolute-template.json>\n'
         + '       peanut create <absolute-target> --name <name> --slug <slug> --package <vendor/name> --edition multi-tenant --plan --module-release <tag> [--module-preset standard|minimal] [--module-channel stable|prerelease] [--modules <optional-key,...>]\n'
@@ -262,9 +281,16 @@ function parseUpgradeArguments(raw) {
 async function main() {
     if (process.argv[2] === 'help') {
         const topic = process.argv[3];
-        if (process.argv.length > 4 || (topic && !['config', 'release', 'module'].includes(topic))) throw new Error('PEANUT_HELP_TOPIC_INVALID');
+        if (process.argv.length > 4 || (topic && !['config', 'core', 'release', 'module'].includes(topic))) throw new Error('PEANUT_HELP_TOPIC_INVALID');
         usage(topic);
         return 0;
+    }
+    if (process.argv[2] === 'core') {
+        const raw = process.argv.slice(3);
+        if (raw.some((item) => ['--help', '-h'].includes(item))) { usage('core'); return 0; }
+        const result = await runCoreDev(parseCoreArguments(raw));
+        output(result);
+        return result.status === 'ok' ? 0 : 1;
     }
     if (process.argv[2] === 'module') {
         const raw = process.argv.slice(3);
@@ -305,6 +331,7 @@ async function main() {
         const allowed = new Map([
             ['--path', null], ['--php', 'php'], ['--node', 'node'], ['--npm', 'npm'], ['--pnpm', 'pnpm'],
             ['--composer', 'composer'], ['--python', 'python3'], ['--core-php', 'corePhp'], ['--core-web', 'coreWeb'],
+            ['--core-mode', 'coreMode'],
             ['--release', 'releasePath'], ['--backups', 'backupsPath'], ['--pnpm-cache', 'pnpmCache'],
             ['--npm-cache', 'npmCache'], ['--composer-cache', 'composerCache'], ['--extra-path', 'extraPaths'],
             ['--watch-path', 'watchPaths'], ['--yes', 'yes'],
@@ -335,7 +362,7 @@ async function main() {
                 options[key] = value;
             }
         }
-        output(await configureProject(projectRoot(configRoot), options));
+        output(await configureProject(resolveWorkingRoot(pathSeen ? configRoot : null), options));
         return 0;
     }
     const parsed = parseArguments(process.argv.slice(2));
@@ -347,7 +374,7 @@ async function main() {
     const arguments_ = parsed.arguments;
     if (arguments_.length === 0) { usage(); return 0; }
 
-    const root = projectRoot(parsed.pathValue ?? process.cwd());
+    const root = resolveWorkingRoot(parsed.pathValue);
     const recipes = new RecipeManager(toolRoot);
     const command = arguments_[0];
 

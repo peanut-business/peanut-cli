@@ -8,7 +8,7 @@
   },
   "files": ["bin", "lib", "recipes", "README.md"],
   "scripts": {
-    "check": "node --check bin/peanut.js && node --check lib/protocol.js && node --check lib/recipe-manager.js && node --check lib/create-project.js && node --check lib/module-selection.js && node --check lib/module-composition.js && node --check lib/template-package.js && node --check lib/build-project.js && node --check lib/release-source.js && node --check lib/upgrade-project.js && node --check lib/service-collaboration.js && node --check lib/module.js && node --check lib/module-release.js && node --check lib/project-environment.js",
+    "check": "node --check bin/peanut.js && node --check lib/protocol.js && node --check lib/recipe-manager.js && node --check lib/create-project.js && node --check lib/module-selection.js && node --check lib/module-composition.js && node --check lib/template-package.js && node --check lib/build-project.js && node --check lib/release-source.js && node --check lib/upgrade-project.js && node --check lib/service-collaboration.js && node --check lib/module.js && node --check lib/module-release.js && node --check lib/project-environment.js && node --check lib/configure.js && node --check lib/core-dev.js",
     "test": "node --test test/*.test.js"
   },
   "engines": {

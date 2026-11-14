@@ -6,8 +6,10 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { RecipeManager } from '../lib/recipe-manager.js';
-import { sha256File } from '../lib/protocol.js';
+import { resolveWorkingRoot, sha256File } from '../lib/protocol.js';
 import { createProject } from '../lib/create-project.js';
+import { configureProject } from '../lib/configure.js';
+import { inspectCoreStatus, parseCoreArguments } from '../lib/core-dev.js';
 import { officialFixture } from './helpers/template-fixture.js';
 import { validateTemplatePackage } from '../lib/template-package.js';
 
@@ -405,4 +407,228 @@ test('non-interactive create requires an explicit Edition', (t) => {
     ], { encoding: 'utf8' });
     assert.equal(result.status, 2);
     assert.match(result.stderr, /PEANUT_CREATE_EDITION_REQUIRED/);
+});
+
+function createFakeExecutable(file, body) {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+    fs.chmodSync(file, 0o755);
+}
+
+test('resolveWorkingRoot and CLI commands resolve project root from subdirectories without --path', (t) => {
+    const { temp, app } = createFixture(t);
+    const realApp = fs.realpathSync(app);
+    const subDir = path.join(app, 'server/app/command');
+    fs.mkdirSync(subDir, { recursive: true });
+    assert.equal(resolveWorkingRoot(null, subDir), realApp);
+
+    const statusResult = spawnSync(process.execPath, [BIN, 'status'], { cwd: subDir, encoding: 'utf8' });
+    assert.equal(statusResult.status, 0, statusResult.stderr + statusResult.stdout);
+    const statusJson = JSON.parse(statusResult.stdout);
+    assert.equal(statusJson.kind, 'application');
+    assert.equal(statusJson.application.slug, 'example');
+
+    const nestedOther = path.join(temp, 'elsewhere');
+    fs.mkdirSync(nestedOther, { recursive: true });
+    assert.equal(resolveWorkingRoot(null, nestedOther), fs.realpathSync(nestedOther));
+    assert.equal(resolveWorkingRoot(nestedOther, subDir), fs.realpathSync(nestedOther));
+});
+
+test('configureProject treats created application as single code directory and rejects scaffold options', async (t) => {
+    const temp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'peanut-cli-config-app-')));
+    t.after(() => fs.rmSync(temp, { recursive: true, force: true }));
+
+    // Adjacent Core directories exist as traps; application config must ignore them.
+    fs.mkdirSync(path.join(temp, 'peanut-admin-core-php'), { recursive: true });
+    fs.writeFileSync(path.join(temp, 'peanut-admin-core-php/composer.json'), JSON.stringify({
+        name: 'peanut-admin/core',
+        require: { php: '^8.3' },
+    }));
+    fs.mkdirSync(path.join(temp, 'peanut-admin-core-web'), { recursive: true });
+    fs.writeFileSync(path.join(temp, 'peanut-admin-core-web/package.json'), JSON.stringify({
+        name: 'peanut-admin-core-web',
+    }));
+
+    const appRoot = path.join(temp, 'my-app');
+    const serverSub = path.join(appRoot, 'server/app');
+    fs.mkdirSync(path.join(appRoot, '.peanut'), { recursive: true });
+    fs.mkdirSync(path.join(appRoot, 'tools'), { recursive: true });
+    fs.mkdirSync(path.join(appRoot, 'scripts'), { recursive: true });
+    fs.mkdirSync(serverSub, { recursive: true });
+    fs.writeFileSync(path.join(appRoot, '.peanut/application-manifest.json'), JSON.stringify({ schema_version: 2 }));
+    fs.writeFileSync(path.join(appRoot, 'tools/toolchain.json'), JSON.stringify({ tools: { python3: { version: '3.12.2' } } }));
+    fs.writeFileSync(path.join(appRoot, 'scripts/project-env'), '# stub\n');
+
+    const fakePython = path.join(temp, 'bin/python3');
+    createFakeExecutable(fakePython, 'if [ "$1" = "--version" ]; then echo "Python 3.12.2"; exit 0; fi\nexit 0');
+
+    // Legacy scaffold fields in existing host.json must be stripped on re-configure of an application.
+    fs.mkdirSync(path.join(appRoot, '.local/toolchain'), { recursive: true });
+    fs.writeFileSync(path.join(appRoot, '.local/toolchain/host.json'), JSON.stringify({
+        schema_version: 1,
+        commands: {},
+        paths: { release: 'release', backups: '../backups' },
+        release_database_backup: null,
+    }));
+
+    for (const badOptions of [
+        { python3: fakePython, releasePath: 'release', yes: true },
+        { python3: fakePython, backupsPath: '../backups', yes: true },
+        { python3: fakePython, noReleaseDatabaseBackup: true, yes: true },
+    ]) {
+        await assert.rejects(
+            () => configureProject(appRoot, badOptions),
+            /PEANUT_CONFIG_APPLICATION_SCAFFOLD_OPTION_UNSUPPORTED/,
+        );
+    }
+
+    const cliResult = spawnSync(
+        process.execPath,
+        [BIN, 'config', '--python', fakePython, '--yes'],
+        { cwd: serverSub, encoding: 'utf8' },
+    );
+    assert.equal(cliResult.status, 0, cliResult.stderr + cliResult.stdout);
+    const cliJson = JSON.parse(cliResult.stdout);
+    assert.equal(cliJson.project_kind, 'application');
+    assert.equal(cliJson.paths, undefined);
+    assert.equal(fs.existsSync(path.join(serverSub, '.local/toolchain/host.json')), false);
+
+    const writtenHost = JSON.parse(fs.readFileSync(path.join(appRoot, '.local/toolchain/host.json'), 'utf8'));
+    assert.equal(Object.hasOwn(writtenHost, 'core'), false);
+    assert.equal(Object.hasOwn(writtenHost, 'paths'), false);
+    assert.equal(Object.hasOwn(writtenHost, 'release_database_backup'), false);
+});
+
+test('configureProject uses .local/backups default on scaffold and validates --core-mode', async (t) => {
+    const temp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'peanut-cli-config-scaffold-')));
+    t.after(() => fs.rmSync(temp, { recursive: true, force: true }));
+
+    const scaffoldRoot = path.join(temp, 'scaffold');
+    fs.mkdirSync(path.join(scaffoldRoot, 'tools'), { recursive: true });
+    fs.mkdirSync(path.join(scaffoldRoot, 'scripts'), { recursive: true });
+    fs.writeFileSync(path.join(scaffoldRoot, 'tools/toolchain.json'), JSON.stringify({ tools: { python3: { version: '3.12.2' } } }));
+    fs.writeFileSync(path.join(scaffoldRoot, 'scripts/project-env'), '# stub\n');
+
+    const fakePython = path.join(temp, 'bin/python3');
+    createFakeExecutable(fakePython, 'if [ "$1" = "--version" ]; then echo "Python 3.12.2"; exit 0; fi\nexit 0');
+
+    await assert.rejects(
+        () => configureProject(scaffoldRoot, { python3: fakePython, coreMode: 'invalid', yes: true }),
+        /PEANUT_CONFIG_CORE_MODE_INVALID/,
+    );
+
+    const configured = await configureProject(scaffoldRoot, { python3: fakePython, yes: true });
+    assert.equal(configured.project_kind, 'scaffold');
+    assert.equal(configured.paths.backups, '.local/backups');
+    const writtenHost = JSON.parse(fs.readFileSync(path.join(scaffoldRoot, '.local/toolchain/host.json'), 'utf8'));
+    assert.equal(writtenHost.paths.backups, '.local/backups');
+});
+
+test('parseCoreArguments and inspectCoreStatus report release, out_of_sync, local-path, and validate project files', (t) => {
+    assert.deepEqual(parseCoreArguments([]), { action: 'status' });
+    assert.deepEqual(
+        parseCoreArguments(['path', '--client', 'web,platform', '--core-php', '../php']),
+        { action: 'path', client: 'web,platform', corePhp: '../php' },
+    );
+    assert.throws(() => parseCoreArguments(['release', '--core-php', '../php']), /PEANUT_CORE_ARGUMENTS_INVALID/);
+    assert.throws(() => parseCoreArguments(['status', '--client', 'bogus']), /PEANUT_CORE_CLIENT_INVALID/);
+
+    const temp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'peanut-cli-core-status-')));
+    t.after(() => fs.rmSync(temp, { recursive: true, force: true }));
+
+    const appRoot = path.join(temp, 'app');
+    fs.mkdirSync(path.join(appRoot, '.peanut'), { recursive: true });
+    fs.writeFileSync(path.join(appRoot, '.peanut/application-manifest.json'), JSON.stringify({ schema_version: 2 }));
+    assert.throws(() => inspectCoreStatus(appRoot), /PEANUT_CORE_PROJECT_INVALID/);
+
+    const repoRoot = path.join(temp, 'repo');
+    const phpCore = path.join(temp, 'peanut-admin-core-php');
+    const webCore = path.join(temp, 'peanut-admin-core-web');
+    const workspacePkg = path.join(repoRoot, 'src/modules/peanut-chart');
+    fs.mkdirSync(path.join(phpCore, 'src'), { recursive: true });
+    fs.writeFileSync(path.join(phpCore, 'composer.json'), JSON.stringify({ name: 'peanut-admin/core' }));
+    fs.mkdirSync(path.join(webCore, 'packages/client/dist'), { recursive: true });
+    fs.writeFileSync(path.join(webCore, 'packages/client/package.json'), JSON.stringify({ name: '@peanut-admin/client', version: '5.1.0' }));
+    fs.writeFileSync(path.join(webCore, 'packages/client/dist/index.js'), 'export {};\n');
+    fs.writeFileSync(path.join(webCore, 'packages/client/dist/index.d.ts'), 'export {};\n');
+    fs.mkdirSync(workspacePkg, { recursive: true });
+    fs.writeFileSync(path.join(workspacePkg, 'package.json'), JSON.stringify({ name: '@peanut-admin/peanut-chart', version: '1.0.0' }));
+
+    fs.mkdirSync(path.join(repoRoot, 'scripts'), { recursive: true });
+    fs.mkdirSync(path.join(repoRoot, 'tools'), { recursive: true });
+    fs.writeFileSync(path.join(repoRoot, 'tools/toolchain.json'), JSON.stringify({ tools: {} }));
+    fs.writeFileSync(path.join(repoRoot, 'scripts/core-dev'), '#!/bin/sh\n');
+    fs.mkdirSync(path.join(repoRoot, 'server/vendor/composer'), { recursive: true });
+    fs.mkdirSync(path.join(repoRoot, 'server/vendor/peanut-admin/core'), { recursive: true });
+    fs.mkdirSync(path.join(repoRoot, 'server/app/service'), { recursive: true });
+    fs.writeFileSync(path.join(repoRoot, 'server/composer.json'), JSON.stringify({
+        require: { 'peanut-admin/core': '^5.1.0' },
+    }));
+    fs.writeFileSync(path.join(repoRoot, 'server/composer.lock'), JSON.stringify({
+        packages: [{ name: 'peanut-admin/core', version: 'v5.1.0', source: { reference: 'ref-510' } }],
+    }));
+    fs.writeFileSync(path.join(repoRoot, 'server/vendor/autoload.php'), '<?php\n');
+    fs.writeFileSync(path.join(repoRoot, 'server/vendor/services.php'), '<?php return ["Peanut\\Core\\Provider"];\n');
+
+    const writeInstalledPhp = (version, ref) => {
+        fs.writeFileSync(path.join(repoRoot, 'server/vendor/composer/installed.json'), JSON.stringify({
+            packages: [{ name: 'peanut-admin/core', version, source: { reference: ref } }],
+        }));
+    };
+
+    // Setup web in release mode + unrelated workspace symlink (must be ignored by core status).
+    fs.mkdirSync(path.join(repoRoot, 'web/node_modules/@peanut-admin/client/dist'), { recursive: true });
+    fs.writeFileSync(path.join(repoRoot, 'web/package.json'), JSON.stringify({
+        dependencies: {
+            '@peanut-admin/client': '5.1.0',
+            '@peanut-admin/peanut-chart': 'workspace:^1.0.0',
+        },
+    }));
+    fs.writeFileSync(path.join(repoRoot, 'web/node_modules/@peanut-admin/client/package.json'), JSON.stringify({
+        name: '@peanut-admin/client',
+        version: '5.1.0',
+    }));
+    fs.writeFileSync(path.join(repoRoot, 'web/node_modules/@peanut-admin/client/dist/index.js'), 'export {};\n');
+    fs.writeFileSync(path.join(repoRoot, 'web/node_modules/@peanut-admin/client/dist/index.d.ts'), 'export {};\n');
+    fs.symlinkSync(workspacePkg, path.join(repoRoot, 'web/node_modules/@peanut-admin/peanut-chart'));
+
+    // Case 1: release mismatch (locked v5.1.0 vs vendor v5.0.3).
+    writeInstalledPhp('v5.0.3', 'ref-503');
+    const mismatch = inspectCoreStatus(repoRoot, { client: 'web' });
+    assert.equal(mismatch.status, 'out_of_sync');
+    assert.equal(mismatch.mode, 'release');
+    assert.equal(mismatch.php.synced, false);
+    assert.equal(mismatch.web.web.synced, true);
+
+    // Case 2: release synced (v5.1.0 matches lock, invoked from subdirectory via CLI).
+    writeInstalledPhp('v5.1.0', 'ref-510');
+    const syncedRelease = inspectCoreStatus(repoRoot, { client: 'web' });
+    assert.equal(syncedRelease.status, 'ok');
+    assert.equal(syncedRelease.mode, 'release');
+
+    const cliCore = spawnSync(
+        process.execPath,
+        [BIN, 'core', 'status', '--client', 'web'],
+        { cwd: path.join(repoRoot, 'server/app'), encoding: 'utf8' },
+    );
+    assert.equal(cliCore.status, 0, cliCore.stderr + cliCore.stdout);
+    const cliCoreJson = JSON.parse(cliCore.stdout);
+    assert.equal(cliCoreJson.status, 'ok');
+    assert.equal(cliCoreJson.root, repoRoot);
+
+    // Case 3: local-path synced (vendor symlink + web core symlink + .local/core-dev.json).
+    fs.rmSync(path.join(repoRoot, 'server/vendor/peanut-admin/core'), { recursive: true, force: true });
+    fs.symlinkSync(phpCore, path.join(repoRoot, 'server/vendor/peanut-admin/core'));
+    fs.rmSync(path.join(repoRoot, 'web/node_modules/@peanut-admin/client'), { recursive: true, force: true });
+    fs.symlinkSync(path.join(webCore, 'packages/client'), path.join(repoRoot, 'web/node_modules/@peanut-admin/client'));
+    fs.mkdirSync(path.join(repoRoot, '.local'), { recursive: true });
+    fs.writeFileSync(path.join(repoRoot, '.local/core-dev.json'), JSON.stringify({
+        php_core_dir: phpCore,
+        web_core_dir: webCore,
+    }));
+    const localPath = inspectCoreStatus(repoRoot, { client: 'web' });
+    assert.equal(localPath.status, 'ok');
+    assert.equal(localPath.mode, 'local-path');
+    assert.equal(localPath.php.synced, true);
+    assert.equal(localPath.web.web.synced, true);
 });
