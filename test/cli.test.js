@@ -499,7 +499,7 @@ test('configureProject treats created application as single code directory and r
     assert.equal(Object.hasOwn(writtenHost, 'release_database_backup'), false);
 });
 
-test('configureProject uses .local/backups default on scaffold and validates --core-mode', async (t) => {
+test('configureProject uses ../backups default on scaffold and validates --core-mode', async (t) => {
     const temp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'peanut-cli-config-scaffold-')));
     t.after(() => fs.rmSync(temp, { recursive: true, force: true }));
 
@@ -519,9 +519,9 @@ test('configureProject uses .local/backups default on scaffold and validates --c
 
     const configured = await configureProject(scaffoldRoot, { python3: fakePython, yes: true });
     assert.equal(configured.project_kind, 'scaffold');
-    assert.equal(configured.paths.backups, '.local/backups');
+    assert.equal(configured.paths.backups, '../backups');
     const writtenHost = JSON.parse(fs.readFileSync(path.join(scaffoldRoot, '.local/toolchain/host.json'), 'utf8'));
-    assert.equal(writtenHost.paths.backups, '.local/backups');
+    assert.equal(writtenHost.paths.backups, '../backups');
 });
 
 test('parseCoreArguments and inspectCoreStatus report release, out_of_sync, local-path, and validate project files', (t) => {
@@ -556,10 +556,20 @@ test('parseCoreArguments and inspectCoreStatus report release, out_of_sync, loca
 
     fs.mkdirSync(path.join(repoRoot, 'scripts'), { recursive: true });
     fs.mkdirSync(path.join(repoRoot, 'tools'), { recursive: true });
-    fs.writeFileSync(path.join(repoRoot, 'tools/toolchain.json'), JSON.stringify({ tools: {} }));
+    fs.writeFileSync(path.join(repoRoot, 'tools/toolchain.json'), JSON.stringify({
+        execution: { protocol: 'peanut.project-env.v2' },
+    }));
+    fs.writeFileSync(path.join(repoRoot, 'scripts/project-env'), [
+        'import json, sys',
+        "assert sys.argv[-3:] == ['--tools', 'node', 'doctor']",
+        `print(json.dumps({'status': 'ok', 'writes': False, 'tools': {'node': {'argv': [${JSON.stringify(process.execPath)}]}}}))`,
+    ].join('\n'));
+    fs.writeFileSync(path.join(repoRoot, 'scripts/local-core-web'),
+        '[[ "$*" == "status --client web" && -f web/pnpm-lock.yaml ]]\n');
     fs.writeFileSync(path.join(repoRoot, 'scripts/core-dev'), '#!/bin/sh\n');
     fs.mkdirSync(path.join(repoRoot, 'server/vendor/composer'), { recursive: true });
     fs.mkdirSync(path.join(repoRoot, 'server/vendor/peanut-admin/core'), { recursive: true });
+    fs.writeFileSync(path.join(repoRoot, 'server/vendor/peanut-admin/core/composer.json'), JSON.stringify({ name: 'peanut-admin/core' }));
     fs.mkdirSync(path.join(repoRoot, 'server/app/service'), { recursive: true });
     fs.writeFileSync(path.join(repoRoot, 'server/composer.json'), JSON.stringify({
         require: { 'peanut-admin/core': '^5.1.0' },
@@ -578,6 +588,7 @@ test('parseCoreArguments and inspectCoreStatus report release, out_of_sync, loca
 
     // Setup web in release mode + unrelated workspace symlink (must be ignored by core status).
     fs.mkdirSync(path.join(repoRoot, 'web/node_modules/@peanut-admin/client/dist'), { recursive: true });
+    fs.writeFileSync(path.join(repoRoot, 'web/pnpm-lock.yaml'), 'lockfileVersion: 9\n');
     fs.writeFileSync(path.join(repoRoot, 'web/package.json'), JSON.stringify({
         dependencies: {
             '@peanut-admin/client': '5.1.0',
@@ -605,6 +616,9 @@ test('parseCoreArguments and inspectCoreStatus report release, out_of_sync, loca
     const syncedRelease = inspectCoreStatus(repoRoot, { client: 'web' });
     assert.equal(syncedRelease.status, 'ok');
     assert.equal(syncedRelease.mode, 'release');
+    fs.unlinkSync(path.join(repoRoot, 'web/pnpm-lock.yaml'));
+    assert.equal(inspectCoreStatus(repoRoot, { client: 'web' }).status, 'out_of_sync');
+    fs.writeFileSync(path.join(repoRoot, 'web/pnpm-lock.yaml'), 'lockfileVersion: 9\n');
 
     const cliCore = spawnSync(
         process.execPath,
@@ -623,6 +637,9 @@ test('parseCoreArguments and inspectCoreStatus report release, out_of_sync, loca
     fs.symlinkSync(path.join(webCore, 'packages/client'), path.join(repoRoot, 'web/node_modules/@peanut-admin/client'));
     fs.mkdirSync(path.join(repoRoot, '.local'), { recursive: true });
     fs.writeFileSync(path.join(repoRoot, '.local/core-dev.json'), JSON.stringify({
+        schema_version: 1,
+        application_root: repoRoot,
+        backend_env: path.join(repoRoot, 'server/.env'),
         php_core_dir: phpCore,
         web_core_dir: webCore,
     }));

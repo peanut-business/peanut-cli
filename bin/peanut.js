@@ -26,7 +26,7 @@ function usage(topic = null) {
         process.stdout.write(
             '用法：peanut module <operation> [参数] [--root <APP目录>]\npeanut help module\n\n'
             + `操作：${MODULE_OPERATIONS.join(', ')}\n\n`
-            + '默认在当前 APP 根执行；--root 自身相对当前工作目录解析。本地包及其他操作的参数原样传给 APP，操作参数帮助使用 peanut module <operation> --help。\n'
+            + '默认向上查找 APP 根；在 .peanut/scaffold-baseline 内须用 --root 指定项目根。--root 自身相对当前工作目录解析。本地包及其他操作的参数原样传给 APP，操作参数帮助使用 peanut module <operation> --help。\n'
             + '在线：peanut module upgrade|install peanut.file [--version 1.0.47] [--channel stable|prerelease] [--root APP]\n'
             + '发现更新：peanut module updates [--channel stable|prerelease] [--root APP]（只读、无需本机 PHP/环境登记；安装仍须原生预检）。\n'
             + 'upgrade 支持 --dry-run；install 原生入口尚不支持 dry-run，显式请求将拒绝。\n'
@@ -39,7 +39,7 @@ function usage(topic = null) {
     if (topic === 'core') {
         process.stdout.write(
             '用法：peanut core [status|path|release] [选项]\npeanut help core\n\n'
-            + '查看或切换脚手架/模块维护仓（非已创建 APP）的 Core 依赖模式，支持从 code 根或任意子目录执行。\n\n'
+            + '查看或切换提供 scripts/core-dev 的项目（含生成 APP）的 Core 模式。普通子目录向上寻根；在 .peanut/scaffold-baseline 内须用 --path 指定项目根。\n\n'
             + '操作：\n'
             + '  status                            查看 PHP/Web Core 当前模式（local-path/release）与锁定版本同步状态（默认）\n'
             + '  path (link|local)                 一键切换为本地 Core 源码 path 软链开发模式（不修改 Git 清单）\n'
@@ -55,21 +55,21 @@ function usage(topic = null) {
     if (topic === 'config') {
         process.stdout.write(
             '用法：peanut config [选项]\npeanut help config\n\n'
-            + '为当前 Peanut Admin Code 项目或已创建应用选择本机已安装工具，并写入忽略目录 .local/toolchain/host.json；随后调用现有 scripts/project-env prepare。不会安装软件或修改全局 PATH。默认从当前目录向上查找所在项目根；对已创建应用（含 .peanut/application-manifest.json）仅配置单目录工具链，不探测或写入脚手架 Core/backups/release 配置。\n\n'
+            + '为当前 Peanut Admin Code 项目或已创建应用选择本机已安装工具，并写入忽略目录 .local/toolchain/host.json；随后调用现有 scripts/project-env prepare。不会安装软件或修改全局 PATH。默认从当前目录向上查找所在项目根；在 .peanut/scaffold-baseline 内须用 --path 指定项目根。普通 config 保留原生 Core 选择；生成 APP 默认使用锁定依赖，可显式选择 path 联合开发。\n\n'
             + '路径基准：--path 自身相对当前工作目录解析；其余工具路径及 Core host 中的 commands/caches/extra_path/watch_paths 相对所选 Code 根。维护数据库登记和 SQL 快照只接受绝对路径。Core 目录可相对 Code 根输入，配置始终保存绝对路径；.local 配置不随 Git 合并，新工作区或目录位置变化后须重新 config 并指定当前 Core 位置。\n\n'
             + '选项：\n'
-            + '  --path <目录>                   Code 项目根，默认从当前目录向上查找\n'
+            + '  --path <目录>                   Code 或生成 APP 根，默认从当前目录向上查找\n'
             + '  --php <文件>                    PHP 可执行文件\n'
             + '  --node <文件>                   Node.js 可执行文件\n'
             + '  --npm <文件>                    npm 可执行文件\n'
             + '  --pnpm <文件>                   pnpm 可执行文件\n'
             + '  --composer <文件>               Composer 可执行文件或 PHAR\n'
             + '  --python <文件>                 Python 3 可执行文件\n'
-            + '  --core-php <目录>               本地 PHP Core 源码目录（仅维护仓）\n'
-            + '  --core-web <目录>               本地 Web Core 源码目录（仅维护仓）\n'
-            + '  --core-mode <path|release>      配置后立即同步为本地 Core path 或正式发行版（仅维护仓）\n'
+            + '  --core-php <目录>               本地 PHP Core 源码目录（本机偏好）\n'
+            + '  --core-web <目录>               本地 Web Core 源码目录（本机偏好）\n'
+            + '  --core-mode <path|release>      显式切换本地源码或锁定发行版；release 不接受 Core 路径\n'
             + '  --release <路径>                release 输出根，默认 release（仅维护仓）\n'
-            + '  --backups <路径>                backups 目录，首次默认 .local/backups（仅维护仓）\n'
+            + '  --backups <路径>                backups 目录，首次默认 ../backups；启用数据库备份时须在源码与 release 外\n'
             + '  --release-database-registry <绝对文件>  可选维护数据库登记，与下两项配套\n'
             + '  --release-database-resource <ID>       维护数据库稳定资源 ID\n'
             + '  --release-database-sql <绝对文件>       制包前原生 SQL 快照，必须在源码与制品外\n'
@@ -80,6 +80,7 @@ function usage(topic = null) {
             + '  --extra-path <目录>              指定额外搜索目录，可重复\n'
             + '  --watch-path <路径>              登记环境指纹观察路径，可重复\n'
             + '  --yes                            跳过最终确认；仍预览、写配置并执行 prepare\n\n'
+            + 'pnpm store、npm cache、Composer cache 各自优先使用显式目录或已有配置，再选已有可写系统缓存，最后使用项目或 Core scope 的本地缓存。\n\n'
             + '工具优先级：显式参数 > 已保存的有效绑定 > 自动发现；已有 host 中未改动的工具及路径设置会复用，不重复选择。失效绑定会报错，不静默改选。多个发现候选会提示选择；推荐版本差异只提示，manifest/平台及原生锁的实际兼容约束仍按 project-env 检查。npm/pnpm 使用同一所选 Node，Composer 使用所选 PHP。Core 工具要求分别从各自 composer.json/package.json 读取；不要求 Core 仓库包含 tools/toolchain.json 或 project-env。Core 源码目录只读，独立配置保存在 Code .local/toolchain/cores/<php|web>/host.json。\n',
         );
         return;
@@ -104,7 +105,7 @@ function usage(topic = null) {
             + '  --internal-core-inputs <回执>      消费固定内部候选的 Core 冻结回执；必须与该候选工作流组合使用\n'
             + '  --api-tool-root <目录>             固定 CI/API 工具入口根目录\n'
             + '高级选项用于已固定输入的维护流水线，普通本地发行无需填写；互斥或不完整组合会拒绝。\n\n'
-            + 'Core 默认选择最新正式稳定版；PHP 与 Web 版本独立，Web 六包保持同版。最终目录为 <output>/<版本>/standalone 和 multi-tenant。已存在同版本目录默认拒绝。可选 release_database_backup 维护配置启用后，在准备/双 Edition 制包前只导出一次原生 SQL；失败即停止，旧快照保存在 paths.backups，SQL 不进入应用包。必须提供当前原生资源租约，默认关闭。Core 选择、来源和摘要写入包清单；默认不携带 Core 归档。此命令不发布或部署。\n',
+            + 'Core 默认选择最新正式稳定版；PHP 与 Web 版本独立，Web 六包保持同版。最终目录为 <output>/<版本>/standalone 和 multi-tenant。已存在同版本目录默认拒绝。可选 release_database_backup 维护配置启用后，在准备/双 Edition 制包前只导出一次原生 SQL；失败即停止，旧快照保存在 paths.backups，SQL 不进入应用包。备份默认关闭。Core 选择、来源和摘要写入包清单；默认不携带 Core 归档。此命令不发布或部署。\n',
         );
         return;
     }
