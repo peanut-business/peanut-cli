@@ -38,7 +38,7 @@ npm install -g .
 npm install -g /path/to/peanut-admin-cli-X.Y.Z.tgz
 ```
 
-按命令操作对象选择工作目录：`config` 使用选定的 Peanut Admin Code 或生成 APP 根，`release` 使用 Code 根；`doctor`、`status`、`upgrade`、`recipe` 使用对应 APP 或脚手架根；`create` 的第一个参数是新目标目录。支持 `--path` 的命令可用它选择根目录；它自身相对当前目录解析，config/release 的其他路径相对选定项目根解析。临时 worktree 是独立根。普通用户运行已安装的 `peanut`；CLI 内部调用所选项目的 `scripts/project-env`，制包调用 Code 的 `scripts/build-scaffold-release`，不直接运行 CLI 源码仓 `bin/peanut.js`。
+按命令操作对象选择工作目录：`config` 使用选定的 Peanut Admin Code 或生成 APP 根，`release` 使用 Code 根；`doctor`、`status`、`upgrade`、`recipe` 使用对应 APP 或脚手架根；`create` 的第一个参数是新目标目录。支持 `--path` 的命令可用它选择根目录；它自身相对当前目录解析，config/release 的其他路径相对选定项目根解析。普通子目录向上寻根；在 `.peanut/scaffold-baseline` 及其子目录中须用 `--path` 指定实际项目根，`module` 用 `--root`。临时 worktree 是独立根。普通用户运行已安装的 `peanut`；CLI 内部调用所选项目的 `scripts/project-env`，制包调用 Code 的 `scripts/build-scaffold-release`，不直接运行 CLI 源码仓 `bin/peanut.js`。
 
 CLI 安装和环境配置是首次准备。环境与路径不变时，日常生成脚手架只需 `peanut release`，无需手动 prepare/install/hash。
 
@@ -98,7 +98,7 @@ native Edition, dependency, authorization and runtime admission check.
 To check the independent Scaffold release use `peanut upgrade --check --path
 /absolute/app`; a newer Scaffold does not silently upgrade installed modules.
 
-公开入口为 `peanut module <operation> [参数] [--root <APP目录>]`，支持 `create`、`check`、`compile`、`pack`、`adopt`、`install`、`upgrade`、`disable`、`uninstall`、`sync`、`reconcile`、`make`、`lock`、`release-composition`、`work`。默认使用当前目录作为 APP 根；`--root` 可用相对或绝对路径，自身相对当前工作目录解析。本地 tar 与其他操作仍只消费 `--root`，其余参数按原顺序交给 APP；`--` 后不再解析 `--root`。各原生操作参数以 `peanut module <operation> --help` 为准；在线参数见 `peanut help module`。
+公开入口为 `peanut module <operation> [参数] [--root <APP目录>]`，支持 `create`、`check`、`compile`、`pack`、`adopt`、`install`、`upgrade`、`disable`、`uninstall`、`sync`、`reconcile`、`make`、`lock`、`release-composition`、`work`。默认向上查找 APP 根；`--root` 可用相对或绝对路径，自身相对当前工作目录解析。本地 tar 与其他操作仍只消费 `--root`，其余参数按原顺序交给 APP；`--` 后不再解析 `--root`。各原生操作参数以 `peanut module <operation> --help` 为准；在线参数见 `peanut help module`。
 
 `upgrade|install peanut.<模块名>` 从固定公共仓库 `peanut-opensource/peanut-module-code` 的 GitHub Release 附件获取模块。默认 `--channel stable`，在所有已发布 Release 的索引中独立按模块 SemVer 选择最高兼容稳定版；仓库 Tag 和模块版本可以不同。`--version` 只接受精确版本，精确 RC 也必须显式 `--channel prerelease`；该通道允许稳定版和预发行版。草稿、未发布 Release、原始 HEAD、候选目录、本地 tar 都不会成为在线发现的替代来源。没有已发布附件即报错，不伪称已安装。
 
@@ -140,7 +140,7 @@ S2 与 Code 已交付的原生首次安装预检接口：沿用 stdin JSON `{ "o
 
 S1 资格须分别记录 CLI 协议测试和真实公开 Release 下载。受控 fetcher 与原生桥模拟只证明 CLI 编排；至少一个真实 GitHub RC 的发现、索引/API 摘要、逐包校验及隔离宿主调用通过后，才能宣称 Gate S1 端到端通过。未核实公开 Release 或 stable 依赖闭包时保留 NOT_RUN/UNKNOWN，不用本地 TAR 或 RC 替代 stable 资格。
 
-### MT 创建与官方组合规划
+### ST/MT 创建与官方组合规划
 
 `create --plan` 从所选模板包内的 `server/config/module_composition.json` 读取版本化 `peanut.application-module-composition.v1` 清单。Code 是唯一产品成员来源；CLI 不维护第二份必选、默认或可选模块表。`standard` 选择 mandatory + default，`minimal` 只选择 mandatory，`--modules` 仅允许清单明确列入 optional 的额外项。必选不会被省略；依赖闭包仍交给 Code 原生检查。
 
@@ -158,9 +158,9 @@ peanut create /absolute/new-app --name Example --slug example --package example/
 
 在线核验显式 tag 的已发布不可变 Release、API digest 固定的索引及 catalog TAR；离线核验显式索引、独立 SHA 和同目录 TAR，不声称验证了 GitHub 发行状态。两者保留原始索引字节、commit 和精确制品身份，完整依赖闭包交给 Code。模板与模块渠道独立，RC 须显式选择；离线只接受显式 prerelease。缺少组合清单的旧模板不能规划外置组合。
 
-`--plan` 返回私有 `composition_stage` 与暂存消费者，通过显式 `--module-php /absolute/php` 调用 Code 原生 plan；缺本消费者的 bridge/vendor 时报告精确 blocker 并保留暂存目录。依赖须通过该消费者原生工具准备，不复制其他应用 vendor。重复同一固定参数并加 `--composition-stage` 可继续 plan。审阅后用 `--plan-sha256 <native-sha>` 替换 `--plan`，Code 在原 writer 内复算并比较 hash，原生 `source-prepared` 成功后才提升到目标，返回 `source-created`。错误保留原生退出码、诊断和恢复身份；目标在 plan 或失败时不写入。完整命令、离线约束及恢复见 [MT 组合合同](docs/mt-create-module-planning.md)。当前官方 ST/MT 模板是薄模板，默认不带官方模块源码，modules.lock 为空。需要模块时由模块专用开发应用独立发行，消费者按实际选择和依赖闭包采用；CLI plan 只确认源码范围，不执行依赖/API/模块编译、数据库首装或业务验收。
+`--plan` 返回私有 `composition_stage` 与暂存消费者，通过显式 `--module-php /absolute/php` 调用 Code 原生 plan；缺本消费者的 bridge/vendor 时报告精确 blocker 并保留暂存目录。依赖须通过该消费者原生工具准备，不复制其他应用 vendor。重复同一固定参数并加 `--composition-stage` 可继续 plan。审阅后用 `--plan-sha256 <native-sha>` 替换 `--plan`，Code 在原 writer 内复算并比较 hash，原生 `source-prepared` 成功后才提升到目标，返回 `source-created`。错误保留原生退出码、诊断和恢复身份；目标在 plan 或失败时不写入。完整命令、离线约束及恢复见 [MT 组合合同](docs/mt-create-module-planning.md)。以上命令是 MT 示例；选择 ST 时将 Edition 参数改为 standalone，并同时使用独立 ST 模板原件及与 ST 兼容的 Module 发行索引。当前官方 ST/MT 模板是薄模板，默认不带官方模块源码，modules.lock 为空。需要模块时由模块专用开发应用独立发行，消费者按实际选择和依赖闭包采用；CLI plan 只确认源码范围，不执行依赖/API/模块编译、数据库首装或业务验收。
 
-首次运行先用 `peanut config --path /absolute/app` 配置工具。模块命令通过 APP 的 `scripts/project-env` 选择 PHP，执行内部 `server/module`，以 stdin JSON `{ "operation": "check", "arguments": [] }` 传参；无需 HTTP 或启动站点。APP 的 stdout、stderr 与退出码直接返回，失败不会包装成成功。
+在 v2 自动发现工具的应用上无需首次强制配置；仅旧 APP 或确需固定特殊工具/Core 时使用 `peanut config --path /absolute/app` 配置工具。模块命令通过 APP 的 `scripts/project-env` 选择 PHP，执行内部 `server/module`，以 stdin JSON `{ "operation": "check", "arguments": [] }` 传参；无需 HTTP 或启动站点。APP 的 stdout、stderr 与退出码直接返回，失败不会包装成成功。
 
 模块包默认输出到 APP `.local/toolchain/host.json` 的 `paths.release` 下的 `modules`，未配置发行路径时为 APP `release/modules`；相对发行路径以 APP 根解析。操作支持的显式输出参数由 APP 处理，CLI 不依赖私有工作区路径或 Project 仓库。
 
@@ -177,16 +177,17 @@ peanut config --path /absolute/peanut-admin-code --yes
 | `--path` | Code 或生成 APP 根目录 | 当前目录 | 选择配置项目；自身相对当前目录解析 |
 | `--php`, `--node`, `--npm`, `--pnpm`, `--composer`, `--python` | 已安装工具路径 | 显式参数 > 有效配置 > 自动发现 | 选择本机工具；首次配置 Core 时沿用本项目已选择的工具；已有 Core 配置时保留其已选工具 |
 | `--core-php`, `--core-web` | 本地 Core 源码目录（可相对所选项目根） | 显式参数 > 已保存选择（含 `null`）；Code 可邻接发现 | 始终保存绝对路径，固定绑定实际 Core 位置；生成 APP 默认不发现相邻源码仓，使用模板锁定的 Core 依赖；显式选择源码可用于联合开发 |
+| `--core-mode` | `path` 或 `release` | 省略时保留原生选择 | 显式切换依赖；需项目提供 `scripts/core-dev`。`release` 不接受 Core 路径参数 |
 | `--release`, `--backups` | 路径 | release=`release`；backups 初次=`../backups` | 保存发行输出根和备份位置；已有值继续复用 |
-| `--release-database-registry`, `--release-database-resource`, `--release-database-sql` | 绝对登记文件、稳定资源 ID、绝对 `.sql` 文件 | 默认关闭；启用后三项复用 | 可选维护配置，制包前导出开发库快照；登记及 SQL 位于 Code 源码外，SQL 不进入模板 |
+| `--release-database-registry`, `--release-database-resource`, `--release-database-sql` | 绝对登记文件、稳定资源 ID、绝对 `.sql` 文件 | 默认关闭；启用后三项复用 | 可选维护配置，制包前导出开发库快照；登记、SQL 和备份目录均须位于源码与 release 输出目录之外；已有目录冲突时拒绝保存，须显式更正 |
 | `--no-release-database-backup` | 开关 | 默认保留现有选择 | 清除已保存的数据库备份配置；不删除已有快照 |
-| `--pnpm-cache`, `--npm-cache`, `--composer-cache` | 路径 | `.local/toolchain/cache/<tool>` | 设置工具缓存位置 |
+| `--pnpm-cache`, `--npm-cache`, `--composer-cache` | 路径 | 显式目录 > 已保存配置 > 已有可写系统缓存 > 项目本地缓存 | 分别配置 pnpm store、npm cache 和 Composer cache |
 | `--extra-path`, `--watch-path` | 路径，可重复 | 未指定时复用已存值 | 显式指定额外搜索目录或观察路径列表 |
 | `--yes` | 开关 | 默认预览后询问 | 自动确认写入并执行 prepare；不是只读，也不代替工具选择 |
 
 配置保存在 Code `.local/toolchain/host.json`；Core 各自配置在 `.local/toolchain/cores/<php|web>/host.json`。
 
-生成 APP 同样使用自身 `.local/toolchain/host.json`。存在 `.peanut/application-manifest.json` 时，首次配置不会因目录相邻而绑定 PHP/Web Core 源码；默认继续采用模板锁定的依赖及包内冻结归档。需要源码联合开发时显式传入 `--core-php` / `--core-web`，配置只记录选择并准备工具环境，不自动链接依赖。已保存的选择继续复用，`core.php` / `core.web` 为 `null` 表示不绑定对应源码。
+生成 APP 同样使用自身 `.local/toolchain/host.json`。存在 `.peanut/application-manifest.json` 时，首次配置不会因目录相邻而绑定 PHP/Web Core 源码；默认继续采用模板锁定的依赖及包内冻结归档。要切换到源码联合开发，运行 `peanut config --path /absolute/app --core-mode path`，需要覆盖原生选择时再指定源码目录。单独传入 `--core-php` / `--core-web`，只保存本机目录偏好并准备工具环境，不自动链接依赖。已保存的选择继续复用，`core.php` / `core.web` 为 `null` 表示不绑定对应源码。
 
 ## 4. 生成脚手架：release
 
@@ -278,7 +279,7 @@ peanut recipe add scaffold-ci --path /absolute/peanut-admin-code
 ### config / release 实现合同
 
 - `config` 先预览工具、推荐版本、路径、来源文件和写入对象，再由用户确认；`--yes` 只跳过最终确认，仍写入并调用 Code `scripts/project-env prepare`。它不消解歧义选择。拒绝确认不改文件；未提供新参数时复用有效绑定和路径。
-- 配置只登记已安装工具，不安装软件或修改全局 PATH。Core 要求分别来自其 `composer.json` / `package.json`；Core 源码只读，独立 host 与缓存位于 Code `.local/toolchain/cores/php|web/`。Core 首次选择继承主工具已选 scope，既有 Core scope 复用自身绑定。主缓存默认 `.local/toolchain/cache/{pnpm,npm,composer}`，Core 缓存默认 `.local/toolchain/cores/{php,web}/cache/<tool>`。
+- 配置只登记已安装工具，不安装软件或修改全局 PATH。Core 要求分别来自其 `composer.json` / `package.json`；Core 源码只读，独立 host 位于项目 `.local/toolchain/cores/php|web/`。Core 首次选择继承主工具已选 scope，既有 Core scope 复用自身绑定。无显式目录、已保存配置和可写系统缓存时，主缓存回退到 `.local/toolchain/cache/{pnpm,npm,composer}`，Core 缓存回退到 `.local/toolchain/cores/{php,web}/cache/<tool>`。
 - 推荐版本差异只告警；manifest/platform 要求和原生锁仍受校验。外部 Composer 绑定本地路径、版本与文件 SHA-256，用于发现本地文件替换，不证明官方来源。
 - `release` 对当前磁盘源码快照发行（包含未提交内容），排除 Git 元数据、本地配置、依赖、运行数据和旧输出。Core 版本独立，Web 六包同版；Core 来源与摘要写入清单。默认不携带 Core 归档。
 - 固定 Git/CI 流程可用 `--source-commit` 固定源码提交、`--workflow` 选择投影、`--internal-core-inputs` 消费内部候选冻结 Core 回执、`--api-tool-root` 选择 API 工具入口。它们须符合固定候选来源/工作流合同；普通本地发行不使用这些参数，不能用占位 Git 身份替代正式检查。

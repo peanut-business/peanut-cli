@@ -14,14 +14,14 @@ import { MODULE_INDEX, MODULE_REPOSITORY } from '../lib/module-release.js';
 const encode = (value) => Buffer.from(JSON.stringify(value, null, 4) + '\n');
 const bin = fileURLToPath(new URL('../bin/peanut.js', import.meta.url));
 
-function selectionFixture(t, mutate = () => {}, native = false) {
+function selectionFixture(t, mutate = () => {}, native = false, edition = 'multi-tenant') {
     // Synthetic product membership; production membership is owned solely by Code.
     const composition = { schema_version: 1, protocol: 'peanut.application-module-composition.v1', version: '1.0.0',
         mandatory: ['peanut.identity'], default: ['peanut.file'], optional: ['peanut.task'] };
     mutate(composition);
     const f = fixture(t, ({ create, release, app, files, payload }) => {
-        app.application.edition = 'multi-tenant';
-        app.edition.name = 'multi-tenant';
+        app.application.edition = edition;
+        app.edition.name = edition;
         const bytes = encode(composition);
         payload.set(MODULE_PRESETS_PATH, bytes);
         const entry = { path: MODULE_PRESETS_PATH, source: `defaults/${MODULE_PRESETS_PATH}`, mode: 0o644,
@@ -80,7 +80,7 @@ console.log(JSON.stringify(result));
         tag, commit: 'a'.repeat(40), modules: ['identity', 'file', 'task'].map((name) => ({
             key: `peanut.${name}`, version: '1.0.0-rc.1', asset: `peanut.${name}-1.0.0-rc.1.tar`,
             sha256: (name === 'identity' ? 'b' : name === 'file' ? 'c' : 'd').repeat(64), bytes: 1234,
-            license: 'Apache-2.0', editions: ['multi-tenant'], kernel_constraint: '^5.0',
+            license: 'Apache-2.0', editions: ['multi-tenant', 'standalone'], kernel_constraint: '^5.0',
             dependencies: name === 'identity' ? [{ module_key: 'peanut.file', version: '^1.0.0-rc.1' }] : [],
         })) };
     const release = { id: 7, url: `https://api.github.com/repos/${MODULE_REPOSITORY}/releases/7`,
@@ -146,6 +146,46 @@ test('MT standard selection uses only template membership and preserves exact on
     assert.equal(fs.existsSync(path.join(online.staged_application, '.local')), false);
     assert.equal(online.target_mutated, false);
     assert.equal(online.database_mutated, false);
+    assert.equal(fs.existsSync(f.options.target), false);
+});
+
+test('standalone official Module composition plans the same source graph without changing database or target', async (t) => {
+    const f = selectionFixture(t, () => {}, true, 'standalone');
+    const help = spawnSync(process.execPath, [bin, '--help'], { encoding: 'utf8' });
+    assert.equal(help.status, 0, help.stderr);
+    assert.match(help.stdout, /ST\/MT create --plan/);
+    const planned = await createProject(f.offline, f.noNetwork);
+    assert.equal(planned.status, 'ready', JSON.stringify(planned));
+    assert.equal(planned.edition, 'standalone');
+    assert.equal(planned.composition_request.edition, 'standalone');
+    assert.equal(planned.native.plan.edition, 'standalone');
+    assert.deepEqual(planned.roots, ['peanut.file', 'peanut.identity']);
+    assert.match(fs.readFileSync(path.join(planned.staged_application, 'server/.env'), 'utf8'),
+        /DEPLOYMENT_MODE=standalone/);
+    assert.equal(planned.database_mutated, false);
+    assert.equal(planned.installation, 'not-run');
+    assert.equal(fs.existsSync(f.options.target), false);
+    const approved = { ...f.offline, plan: false,
+        compositionStage: planned.composition_stage, planSha256: planned.plan_sha256 };
+    const created = await createProject(approved, f.noNetwork);
+    assert.equal(created.status, 'source-created', JSON.stringify(created));
+    assert.equal(created.native.plan.edition, 'standalone');
+    assert.equal(created.recovery.transaction, 'fixed-tx');
+    assert.equal(created.database_mutated, false);
+    assert.equal(created.installation, 'not-run');
+    assert.equal(fs.existsSync(path.join(f.options.target, 'modules.lock')), true);
+});
+
+test('standalone refuses a Module catalog that only supports multi-tenant before native source adoption', async (t) => {
+    const f = selectionFixture(t, () => {}, false, 'standalone');
+    const row = f.index.modules.find((item) => item.key === 'peanut.identity');
+    row.editions = ['multi-tenant'];
+    const reviewed = f.seal();
+    const selection = await createProject({ ...f.offline, moduleIndexSha256: reviewed }, f.noNetwork);
+    assert.equal(selection.status, 'blocked');
+    assert.deepEqual(selection.blockers.map((item) => item.code), ['MODULE_EDITION_UNSUPPORTED']);
+    assert.equal(selection.target_mutated, false);
+    assert.equal(selection.database_mutated, false);
     assert.equal(fs.existsSync(f.options.target), false);
 });
 

@@ -6,7 +6,7 @@ import { createInterface } from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
 import {
     commandExists, existingFileWithin, phpEnvironmentChecks, projectPath,
-    projectRoot, readJsonObject, validateReleaseVersions,
+    readJsonObject, resolveWorkingRoot, validateReleaseVersions,
 } from '../lib/protocol.js';
 import { RecipeManager } from '../lib/recipe-manager.js';
 import { createProject } from '../lib/create-project.js';
@@ -14,6 +14,7 @@ import { buildProject, parseBuildArguments } from '../lib/build-project.js';
 import { upgradeProject } from '../lib/upgrade-project.js';
 import { parseCollaborationArguments, serviceCollaboration } from '../lib/service-collaboration.js';
 import { configureProject } from '../lib/configure.js';
+import { parseCoreArguments, runCoreDev } from '../lib/core-dev.js';
 import { MODULE_OPERATIONS, parseModuleArguments, runModule } from '../lib/module.js';
 import { automaticEnvironment, inspectEnvironment } from '../lib/project-environment.js';
 
@@ -25,33 +26,50 @@ function usage(topic = null) {
         process.stdout.write(
             '用法：peanut module <operation> [参数] [--root <APP目录>]\npeanut help module\n\n'
             + `操作：${MODULE_OPERATIONS.join(', ')}\n\n`
-            + '默认在当前 APP 根执行；--root 自身相对当前工作目录解析。本地包及其他操作的参数原样传给 APP，操作参数帮助使用 peanut module <operation> --help。\n'
+            + '默认向上查找 APP 根；在 .peanut/scaffold-baseline 内须用 --root 指定项目根。--root 自身相对当前工作目录解析。本地包及其他操作的参数原样传给 APP，操作参数帮助使用 peanut module <operation> --help。\n'
             + '在线：peanut module upgrade|install peanut.file [--version 1.0.47] [--channel stable|prerelease] [--root APP]\n'
             + '发现更新：peanut module updates [--channel stable|prerelease] [--root APP]（只读、无需本机 PHP/环境登记；安装仍须原生预检）。\n'
             + 'upgrade 支持 --dry-run；install 原生入口尚不支持 dry-run，显式请求将拒绝。\n'
             + '在线默认选择最高兼容稳定模块版本；精确 RC 也必须 --channel prerelease。仅使用 peanut-opensource/peanut-module-code 已发布 Release 的 module-release-index.json 和 tar 附件，并按 GitHub API assets[].digest 验证两者。缓存位于 APP .local/module-downloads，每次重新下载验 SHA；原生预检和受控写入负责 Edition、依赖、权限及已安装版本，禁止降级。\n'
-            + '复用 APP scripts/project-env 和 .local/toolchain/host.json 中选择的 PHP，通过 JSON stdin 调用 server/module，无需启动 HTTP 服务。首次使用先运行 peanut config。\n'
+            + '模块操作复用 APP scripts/project-env 选择 PHP，并通过 JSON stdin 调用 server/module，无需 HTTP 服务。新协议 v2 自动发现已安装工具，无需首次运行 peanut config；仅旧 APP 的本机 host 或需要指定特殊工具/Core 时才运行 peanut config。\n'
             + '模块包默认输出至 APP 配置 paths.release 下的 modules（默认 release/modules）；相对发行路径以 APP 根解析。操作结果和退出码由 APP 返回。\n',
+        );
+        return;
+    }
+    if (topic === 'core') {
+        process.stdout.write(
+            '用法：peanut core [status|path|release] [选项]\npeanut help core\n\n'
+            + '查看或切换提供 scripts/core-dev 的项目（含生成 APP）的 Core 模式。普通子目录向上寻根；在 .peanut/scaffold-baseline 内须用 --path 指定项目根。\n\n'
+            + '操作：\n'
+            + '  status                            查看 PHP/Web Core 当前模式（local-path/release）与锁定版本同步状态（默认）\n'
+            + '  path (link|local)                 一键切换为本地 Core 源码 path 软链开发模式（不修改 Git 清单）\n'
+            + '  release (reset|unlink|fixed)      一键重置并同步回 composer.lock / package.json 锁定的正式发行版\n\n'
+            + '选项：\n'
+            + '  --path <目录>                     项目根（默认从当前目录向上自动查找）\n'
+            + '  --core-php <目录>                 指定本地 PHP Core 目录（仅 path 模式）\n'
+            + '  --core-web <目录>                 指定本地 Web Core 目录（仅 path 模式）\n'
+            + '  --client <all|web,platform,pc,uniapp>  仅操作或检查指定前端端（默认 all）\n',
         );
         return;
     }
     if (topic === 'config') {
         process.stdout.write(
             '用法：peanut config [选项]\npeanut help config\n\n'
-            + '为当前 Peanut Admin Code 项目选择本机已安装工具，并写入忽略目录 .local/toolchain/host.json；随后调用现有 scripts/project-env prepare。不会安装软件或修改全局 PATH。\n\n'
+            + '为当前 Peanut Admin Code 项目或已创建应用选择本机已安装工具，并写入忽略目录 .local/toolchain/host.json；随后调用现有 scripts/project-env prepare。不会安装软件或修改全局 PATH。默认从当前目录向上查找所在项目根；在 .peanut/scaffold-baseline 内须用 --path 指定项目根。普通 config 保留原生 Core 选择；生成 APP 默认使用锁定依赖，可显式选择 path 联合开发。\n\n'
             + '路径基准：--path 自身相对当前工作目录解析；其余工具路径及 Core host 中的 commands/caches/extra_path/watch_paths 相对所选 Code 根。维护数据库登记和 SQL 快照只接受绝对路径。Core 目录可相对 Code 根输入，配置始终保存绝对路径；.local 配置不随 Git 合并，新工作区或目录位置变化后须重新 config 并指定当前 Core 位置。\n\n'
             + '选项：\n'
-            + '  --path <目录>                   Code 项目根，默认当前目录\n'
+            + '  --path <目录>                   Code 或生成 APP 根，默认从当前目录向上查找\n'
             + '  --php <文件>                    PHP 可执行文件\n'
             + '  --node <文件>                   Node.js 可执行文件\n'
             + '  --npm <文件>                    npm 可执行文件\n'
             + '  --pnpm <文件>                   pnpm 可执行文件\n'
             + '  --composer <文件>               Composer 可执行文件或 PHAR\n'
             + '  --python <文件>                 Python 3 可执行文件\n'
-            + '  --core-php <目录>               本地 PHP Core 源码目录\n'
-            + '  --core-web <目录>               本地 Web Core 源码目录\n'
-            + '  --release <路径>                release 输出根，默认 release\n'
-            + '  --backups <路径>                backups 目录，首次默认 ../backups\n'
+            + '  --core-php <目录>               本地 PHP Core 源码目录（本机偏好）\n'
+            + '  --core-web <目录>               本地 Web Core 源码目录（本机偏好）\n'
+            + '  --core-mode <path|release>      显式切换本地源码或锁定发行版；release 不接受 Core 路径\n'
+            + '  --release <路径>                release 输出根，默认 release（仅维护仓）\n'
+            + '  --backups <路径>                backups 目录，首次默认 ../backups；启用数据库备份时须在源码与 release 外\n'
             + '  --release-database-registry <绝对文件>  可选维护数据库登记，与下两项配套\n'
             + '  --release-database-resource <ID>       维护数据库稳定资源 ID\n'
             + '  --release-database-sql <绝对文件>       制包前原生 SQL 快照，必须在源码与制品外\n'
@@ -62,6 +80,7 @@ function usage(topic = null) {
             + '  --extra-path <目录>              指定额外搜索目录，可重复\n'
             + '  --watch-path <路径>              登记环境指纹观察路径，可重复\n'
             + '  --yes                            跳过最终确认；仍预览、写配置并执行 prepare\n\n'
+            + 'pnpm store、npm cache、Composer cache 各自优先使用显式目录或已有配置，再选已有可写系统缓存，最后使用项目或 Core scope 的本地缓存。\n\n'
             + '工具优先级：显式参数 > 已保存的有效绑定 > 自动发现；已有 host 中未改动的工具及路径设置会复用，不重复选择。失效绑定会报错，不静默改选。多个发现候选会提示选择；推荐版本差异只提示，manifest/平台及原生锁的实际兼容约束仍按 project-env 检查。npm/pnpm 使用同一所选 Node，Composer 使用所选 PHP。Core 工具要求分别从各自 composer.json/package.json 读取；不要求 Core 仓库包含 tools/toolchain.json 或 project-env。Core 源码目录只读，独立配置保存在 Code .local/toolchain/cores/<php|web>/host.json。\n',
         );
         return;
@@ -86,26 +105,27 @@ function usage(topic = null) {
             + '  --internal-core-inputs <回执>      消费固定内部候选的 Core 冻结回执；必须与该候选工作流组合使用\n'
             + '  --api-tool-root <目录>             固定 CI/API 工具入口根目录\n'
             + '高级选项用于已固定输入的维护流水线，普通本地发行无需填写；互斥或不完整组合会拒绝。\n\n'
-            + 'Core 默认选择最新正式稳定版；PHP 与 Web 版本独立，Web 六包保持同版。最终目录为 <output>/<版本>/standalone 和 multi-tenant。已存在同版本目录默认拒绝。可选 release_database_backup 维护配置启用后，在准备/双 Edition 制包前只导出一次原生 SQL；失败即停止，旧快照保存在 paths.backups，SQL 不进入应用包。必须提供当前原生资源租约，默认关闭。Core 选择、来源和摘要写入包清单；默认不携带 Core 归档。此命令不发布或部署。\n',
+            + 'Core 默认选择最新正式稳定版；PHP 与 Web 版本独立，Web 六包保持同版。最终目录为 <output>/<版本>/standalone 和 multi-tenant。已存在同版本目录默认拒绝。可选 release_database_backup 维护配置启用后，在准备/双 Edition 制包前只导出一次原生 SQL；失败即停止，旧快照保存在 paths.backups，SQL 不进入应用包。备份默认关闭。Core 选择、来源和摘要写入包清单；默认不携带 Core 归档。此命令不发布或部署。\n',
         );
         return;
     }
     process.stdout.write(
         `Peanut CLI ${CLI_VERSION}\n`
         + 'Usage: peanut <command> [options]\n'
-        + '       peanut help [config|release|module]\n'
+        + '       peanut help [config|core|release|module]\n'
         + '       peanut module <operation> [args] [--root <application>]\n'
         + '       peanut module upgrade peanut.file [--version <semver>] [--channel stable|prerelease] [--dry-run] [--root <application>]\n'
         + '       peanut module install peanut.file [--version <semver>] [--channel stable|prerelease] [--root <application>]\n'
         + '       peanut module updates [--channel stable|prerelease] [--root <application>]\n'
-        + '       peanut config [--path <project-root>] [--php <path>] [--node <path>] [--npm <path>] [--pnpm <path>] [--composer <path>] [--python <path>] [--core-php <path>] [--core-web <path>] [--release <path>] [--backups <path>] [--pnpm-cache <path>] [--npm-cache <path>] [--composer-cache <path>] [--extra-path <path>]... [--watch-path <path>]... [--yes]\n'
+        + '       peanut config [--path <project-root>] [--php <path>] [--node <path>] [--npm <path>] [--pnpm <path>] [--composer <path>] [--python <path>] [--core-php <path>] [--core-web <path>] [--core-mode path|release] [--release <path>] [--backups <path>] [--pnpm-cache <path>] [--npm-cache <path>] [--composer-cache <path>] [--extra-path <path>]... [--watch-path <path>]... [--yes]\n'
+        + '       peanut core [status|path|release] [--path <project-root>] [--core-php <path>] [--core-web <path>] [--client <all|web,platform,pc,uniapp>]\n'
         + 'Usage: peanut create <absolute-target> --name <name> --slug <slug> --package <vendor/name> [--edition standalone|multi-tenant] [--application-version <semver>] [--ref <version>] [--channel stable|prerelease]\n'
         + '       peanut create <absolute-target> --name <name> --slug <slug> --package <vendor/name> --edition standalone|multi-tenant --archive <absolute-template.tgz> --manifest <absolute-template.json>\n'
         + '       peanut create <absolute-target> --name <name> --slug <slug> --package <vendor/name> --edition multi-tenant --plan --module-release <tag> [--module-preset standard|minimal] [--module-channel stable|prerelease] [--modules <optional-key,...>]\n'
         + '       peanut doctor|status [--path <application>]\n'
         + '       peanut release [--path <scaffold>] [--version <semver>] [--core-php <version>] [--core-web <version>] [--with-local-core] [--output <path>] [--overwrite]\n'
-        + '       peanut upgrade [--check|--plan] [--ref <version-or-tag>] [--channel stable|prerelease] [--confirm-major-upgrade] [--path <application>]\n'
-        + '       peanut upgrade [--check|--plan] --archive <absolute-template.tgz> --manifest <absolute-template.json> [--source-checkout <absolute-official-source>] [--baseline-mode-manifest <exact-old-release.json>] [--path <application>]\n'
+        + '       peanut upgrade [--check|--plan|--yes] [--ref <version-or-tag>] [--channel stable|prerelease] [--confirm-major-upgrade] [--path <application>]\n'
+        + '       peanut upgrade [--check|--plan|--yes] --archive <absolute-template.tgz> --manifest <absolute-template.json> [--source-checkout <absolute-official-source>] [--baseline-mode-manifest <exact-old-release.json>] [--path <application>]\n'
         + '       peanut upgrade --apply-plan <plan> [--confirm-plan-sha256 <digest> --preserve-paths <paths|-> --replace-paths <paths|->] [--confirm-major-upgrade] [--path <application>]\n'
         + '       peanut upgrade --recover-plan <plan> [--path <application>]\n'
         + '       Upgrade coordinator override: --coordinator-root <canonical-git-root> --coordinator-commit <40hex> --installation-source-commit <40hex> (all required; persisted for apply/recover).\n'
@@ -122,7 +142,7 @@ function usage(topic = null) {
         + 'Create --demo none|workbench defaults to none; the selection is recorded and workbench data is seeded only during first installation.\n'
         + 'Standalone and multi-tenant are separate application artifacts and deployments; normal upgrades remain within the same Edition.\n'
         + 'Create defaults to the latest official stable template attachment. Local archives require their paired manifest. No Git clone, PHP, dependency installation, database or service operation occurs. Target must be absent or strictly empty, including hidden files.\n'
-        + 'MT create --plan stages the selected template and verified module catalog, then calls Code native composition planning. Use --module-php <absolute-php> and prepare the staged consumer native dependencies when missing. Resume with --composition-stage <returned-stage>; prepare with --plan-sha256 <reviewed-native-sha> instead of --plan. Only source-prepared consumers reach the target; database installation is separate. Offline input requires --module-index <absolute-json> --module-index-sha256 <trusted-sha> --module-channel prerelease and indexed TARs beside the index. Template and module channels are independent.\n'
+        + 'ST/MT create --plan stages the selected template and verified module catalog, then calls Code native composition planning. Use --module-php <absolute-php> and prepare the staged consumer native dependencies when missing. Resume with --composition-stage <returned-stage>; prepare with --plan-sha256 <reviewed-native-sha> instead of --plan. Only source-prepared consumers reach the target; database installation is separate. Offline input requires --module-index <absolute-json> --module-index-sha256 <trusted-sha> --module-channel prerelease and indexed TARs beside the index. Template and module channels are independent.\n'
         + 'Fixed-release APP discovery stays within the current major; development APP checks the latest published release. Applying a development source transition requires explicit --ref.\n'
         + 'Risk feature: cross-major upgrades may break custom business code, dependencies, APIs or migrations. Review the plan, keep a recoverable backup and resolve known risks before attempting apply.\n'
         + 'Cross-major apply requires --confirm-major-upgrade. AI/Agent operators must explain source to target, risks and plan and obtain human authorization before passing this flag; prior explicit authorization for this upgrade or a defined cross-major scope is sufficient, but generic development authorization is not.\n',
@@ -233,7 +253,7 @@ function parseUpgradeArguments(raw) {
         ['--source-checkout', 'sourceCheckout'],
         ['--coordinator-root', 'coordinatorRoot'], ['--coordinator-commit', 'coordinatorCommit'],
         ['--installation-source-commit', 'installationSourceCommit'],
-        ['--check', 'check'], ['--plan', 'plan'], ['--confirm-major-upgrade', 'confirmMajorUpgrade'],
+        ['--check', 'check'], ['--plan', 'plan'], ['--yes', 'yes'], ['--confirm-major-upgrade', 'confirmMajorUpgrade'],
     ]);
     for (let index = 0; index < raw.length; index += 1) {
         const argument = raw[index];
@@ -241,7 +261,7 @@ function parseUpgradeArguments(raw) {
         const flag = equals === -1 ? argument : argument.slice(0, equals);
         const key = map.get(flag);
         if (!key || Object.hasOwn(values, key)) throw new Error('PEANUT_UPGRADE_ARGUMENTS_INVALID');
-        if (key === 'check' || key === 'plan' || key === 'confirmMajorUpgrade') {
+        if (key === 'check' || key === 'plan' || key === 'yes' || key === 'confirmMajorUpgrade') {
             if (equals !== -1) throw new Error('PEANUT_UPGRADE_ARGUMENTS_INVALID');
             values[key] = true;
         } else {
@@ -250,7 +270,7 @@ function parseUpgradeArguments(raw) {
             values[key] = value;
         }
     }
-    if ([values.check, values.plan, values.applyPlan, values.recoverPlan].filter(Boolean).length > 1
+    if ([values.check, values.plan, values.applyPlan, values.recoverPlan, values.yes].filter(Boolean).length > 1
         || ((values.applyPlan || values.recoverPlan) && (values.ref || values.channel || values.archive || values.manifest || values.baselineModeManifest || values.sourceCheckout))
         || (values.sourceCheckout && (!values.archive || !values.manifest || values.ref || values.channel))
         || ((values.confirmPlanSha256 || values.preservePaths || values.replacePaths) && !values.applyPlan)) {
@@ -262,9 +282,16 @@ function parseUpgradeArguments(raw) {
 async function main() {
     if (process.argv[2] === 'help') {
         const topic = process.argv[3];
-        if (process.argv.length > 4 || (topic && !['config', 'release', 'module'].includes(topic))) throw new Error('PEANUT_HELP_TOPIC_INVALID');
+        if (process.argv.length > 4 || (topic && !['config', 'core', 'release', 'module'].includes(topic))) throw new Error('PEANUT_HELP_TOPIC_INVALID');
         usage(topic);
         return 0;
+    }
+    if (process.argv[2] === 'core') {
+        const raw = process.argv.slice(3);
+        if (raw.some((item) => ['--help', '-h'].includes(item))) { usage('core'); return 0; }
+        const result = await runCoreDev(parseCoreArguments(raw));
+        output(result);
+        return result.status === 'ok' ? 0 : 1;
     }
     if (process.argv[2] === 'module') {
         const raw = process.argv.slice(3);
@@ -305,6 +332,7 @@ async function main() {
         const allowed = new Map([
             ['--path', null], ['--php', 'php'], ['--node', 'node'], ['--npm', 'npm'], ['--pnpm', 'pnpm'],
             ['--composer', 'composer'], ['--python', 'python3'], ['--core-php', 'corePhp'], ['--core-web', 'coreWeb'],
+            ['--core-mode', 'coreMode'],
             ['--release', 'releasePath'], ['--backups', 'backupsPath'], ['--pnpm-cache', 'pnpmCache'],
             ['--npm-cache', 'npmCache'], ['--composer-cache', 'composerCache'], ['--extra-path', 'extraPaths'],
             ['--watch-path', 'watchPaths'], ['--yes', 'yes'],
@@ -335,7 +363,7 @@ async function main() {
                 options[key] = value;
             }
         }
-        output(await configureProject(projectRoot(configRoot), options));
+        output(await configureProject(resolveWorkingRoot(pathSeen ? configRoot : null), options));
         return 0;
     }
     const parsed = parseArguments(process.argv.slice(2));
@@ -347,7 +375,7 @@ async function main() {
     const arguments_ = parsed.arguments;
     if (arguments_.length === 0) { usage(); return 0; }
 
-    const root = projectRoot(parsed.pathValue ?? process.cwd());
+    const root = resolveWorkingRoot(parsed.pathValue);
     const recipes = new RecipeManager(toolRoot);
     const command = arguments_[0];
 

@@ -510,4 +510,7 @@ test('online argument mistakes fail before discovery; help explains online and l
     assert.match(help.stdout, /--channel stable\|prerelease/);
     assert.match(help.stdout, /assets\[\]\.digest/);
     assert.match(help.stdout, /install.*dry-run/);
+    assert.match(help.stdout, /v2 自动发现已安装工具/);
+    assert.match(help.stdout, /仅旧 APP 的本机 host/);
+    assert.doesNotMatch(help.stdout, /首次使用先运行 peanut config/);
 });
