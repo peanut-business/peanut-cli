@@ -84,7 +84,9 @@ test('release plan is read-only; repeated completed release reuses the identical
     assert.equal(f.run({ plan: true }).status, 'no_build_needed');
     fs.unlinkSync(path.join(f.root, '.local/toolchain/host.json'));
     assert.throws(() => f.run(), /PEANUT_MODULE_CONFIG_REQUIRED|ENVIRONMENT_NOT_READY/);
-    assert.equal(f.run({ plan: true }).status, 'no_build_needed');
+    const offlinePlan = f.run({ plan: true });
+    assert.equal(offlinePlan.status, 'no_build_needed');
+    assert.match(offlinePlan.scope, /does not check the execution environment/);
     assert.equal(f.calls().length, 2);
 });
 
