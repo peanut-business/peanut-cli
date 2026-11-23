@@ -51,6 +51,7 @@ test('archive creation accepts absent and strictly empty targets with native-com
 
 test('new storage templates create a runtime public link without tracking it in the baseline', async (t) => {
     const { options } = fixture(t, ({ create, release, app, files, payload }) => {
+        create.directories.push('server/storage/public', 'server/storage/private');
         const name = 'server/docker/scripts/migrate-storage-layout.py';
         const bytes = Buffer.from('raise RuntimeError("template code must not execute during extraction")\n');
         payload.set(name, bytes);
@@ -71,6 +72,24 @@ test('new storage templates create a runtime public link without tracking it in 
     const app = JSON.parse(fs.readFileSync(path.join(options.target, '.peanut/application-manifest.json')));
     assert.equal(app.files.some((file) => file.path === 'server/public/storage'), false);
     assert.equal(fs.existsSync(path.join(options.target, '.peanut/scaffold-baseline/5.0.2/files/server/public/storage')), false);
+});
+
+test('legacy storage directories remain compatible with fixed older templates', async (t) => {
+    const { options } = fixture(t, ({ create }) => {
+        create.directories.push('server/public/storage', 'server/private/storage');
+    });
+    await createProject(options, () => { throw new Error('must not access network'); });
+    for (const directory of ['server/public/storage', 'server/private/storage']) {
+        assert.equal(fs.lstatSync(path.join(options.target, directory)).isDirectory(), true);
+    }
+});
+
+test('runtime directory declarations cannot widen the canonical storage roots', async (t) => {
+    for (const directory of ['server/storage', 'server/storage/archive', 'server/storage/public/nested', 'server/storage/private/nested']) {
+        const { options } = fixture(t, ({ create }) => { create.directories.push(directory); });
+        await assert.rejects(createProject(options), /PEANUT_TEMPLATE_DIRECTORY_INVALID/);
+        assert.equal(fs.existsSync(options.target), false);
+    }
 });
 
 test('nonempty, hidden Git, symlink and wrong-digest inputs preserve targets', async (t) => {
