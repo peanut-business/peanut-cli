@@ -322,7 +322,20 @@ test('reviewed native hash prepares same consumer before target promotion; appli
     assert.equal(created.installation, 'not-run');
     assert.equal(created.database_mutated, false);
     assert.equal(fs.existsSync(path.join(f.options.target, 'modules.lock')), true);
-    assert.equal(fs.existsSync(plan.staged_application), false);
+    assert.equal(fs.existsSync(plan.composition_stage), false);
+    assert.equal(created.composition_stage, null);
+});
+
+test('a successful create preserves extra stage files and reports their location', async (t) => {
+    const f = selectionFixture(t, () => {}, true);
+    const plan = await createProject(f.offline, f.noNetwork);
+    const note = path.join(plan.composition_stage, 'operator-note');
+    fs.writeFileSync(note, 'keep');
+    const created = await createProject({ ...f.offline, plan: false, compositionStage: plan.composition_stage,
+        planSha256: plan.plan_sha256 }, f.noNetwork);
+    assert.equal(created.status, 'source-created');
+    assert.equal(created.cleanup.path, plan.composition_stage);
+    assert.equal(fs.readFileSync(note, 'utf8'), 'keep');
 });
 
 test('native rejects changed plan and CLI preserves stage plus partial-write recovery identity on errors', async (t) => {

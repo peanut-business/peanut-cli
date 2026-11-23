@@ -33,7 +33,7 @@ Only native `ready` with matching identity yields CLI `ready` and a `plan_sha256
 --composition-stage /absolute/returned-stage --plan-sha256 <reviewed-native-plan-sha>
 ```
 
-CLI requires the saved ready plan; Code recomputes it inside the original writer lock and compares the reviewed hash. Only a successful native `source-prepared` response with the same hash and completed recovery state permits the staged application to be renamed to the still-empty target. CLI returns `source-created`, retaining the native transaction/receipt. This means source adoption only: dependencies, registry/API/client compilation, database first installation, activation, tenant enablement and RBAC remain separate native operations.
+CLI requires the saved ready plan; Code recomputes it inside the original writer lock and compares the reviewed hash. Only a successful native `source-prepared` response with the same hash and completed recovery state permits the staged application to be renamed to the still-empty target. CLI returns `source-created`, retaining the native transaction/receipt in the result. After promotion the CLI removes its temporary inputs. If files remain, the successful result includes their directory in `cleanup.path` for inspection and manual cleanup. This means source adoption only: dependencies, registry/API/client compilation, database first installation, activation, tenant enablement and RBAC remain separate native operations.
 
 ## Recovery and limits
 
