@@ -114,6 +114,9 @@ console.log(JSON.stringify(result));
     const calls = [];
     const fetcher = async (url) => {
         calls.push(url);
+        if (url === `https://api.github.com/repos/${MODULE_REPOSITORY}/releases?per_page=100&page=1`) {
+            return { ok: true, json: async () => [release] };
+        }
         if (url === `https://api.github.com/repos/${MODULE_REPOSITORY}/releases/tags/${tag}`) return { ok: true, json: async () => release };
         const asset = release.assets.find((item) => item.browser_download_url === url);
         assert.ok(asset, url);
@@ -138,7 +141,9 @@ test('MT standard selection uses only template membership and preserves exact on
     assert.equal(online.source.provenance, 'github-release-api-digest');
     assert.equal(offline.source.provenance, 'digest-pinned-local');
     assert.equal(online.preset.sha256, sha256(encode(f.composition)));
-    assert.equal(f.calls.length, 5);
+    assert.equal(f.calls.length, 6);
+    assert.equal(online.withdrawal_policy, 'legacy-index');
+    assert.equal(offline.withdrawal_policy, 'online-not-verified');
     assert.equal(online.dependency_resolution, 'not-run');
     assert.deepEqual(online.blockers.map((row) => row.code), ['CODE_NATIVE_DEPENDENCIES_REQUIRED']);
     assert.deepEqual(online.blockers[0].missing, ['server/module', 'server/vendor/autoload.php', 'server/vendor/topthink/framework/src/helper.php']);
@@ -401,7 +406,9 @@ test('stable rejects a transitive RC reported by native closure without preparin
     fs.writeFileSync(f.offline.moduleIndex, indexBytes);
     f.release.assets[0].digest = 'sha256:' + sha256(indexBytes);
     const fetcher = async (url) => {
-        if (url.startsWith('https://api.github.com/')) return { ok: true, json: async () => f.release };
+        if (url.startsWith('https://api.github.com/')) {
+            return { ok: true, json: async () => url.includes('?per_page=') ? [f.release] : f.release };
+        }
         const asset = f.release.assets.find((row) => row.browser_download_url === url);
         return { ok: true, arrayBuffer: async () => fs.readFileSync(path.join(f.root, asset.name)) };
     };

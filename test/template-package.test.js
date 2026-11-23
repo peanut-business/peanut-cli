@@ -49,6 +49,30 @@ test('archive creation accepts absent and strictly empty targets with native-com
     }
 });
 
+test('new storage templates create a runtime public link without tracking it in the baseline', async (t) => {
+    const { options } = fixture(t, ({ create, release, app, files, payload }) => {
+        const name = 'server/docker/scripts/migrate-storage-layout.py';
+        const bytes = Buffer.from('raise RuntimeError("template code must not execute during extraction")\n');
+        payload.set(name, bytes);
+        const entry = { path: name, source: 'files/' + name, mode: 0o755,
+            classification: 'managed', sha256: sha256(bytes), render: false };
+        files.push(entry);
+        const { source, render, ...recorded } = entry;
+        app.files.push(recorded);
+        release.files.push({ ...entry, template_sha256: entry.sha256 });
+        create.scaffold_manifest_sha256 = sha256(Buffer.from(JSON.stringify(release, null, 4) + '\n'));
+    });
+    await createProject(options, () => { throw new Error('must not access network'); });
+    const entry = path.join(options.target, 'server/public/storage');
+    assert.equal(fs.lstatSync(entry).isSymbolicLink(), true);
+    assert.equal(fs.readlinkSync(entry), '../storage/public');
+    assert.equal(fs.realpathSync(entry), path.join(options.target, 'server/storage/public'));
+    assert.equal(fs.statSync(path.join(options.target, 'server/storage/private')).isDirectory(), true);
+    const app = JSON.parse(fs.readFileSync(path.join(options.target, '.peanut/application-manifest.json')));
+    assert.equal(app.files.some((file) => file.path === 'server/public/storage'), false);
+    assert.equal(fs.existsSync(path.join(options.target, '.peanut/scaffold-baseline/5.0.2/files/server/public/storage')), false);
+});
+
 test('nonempty, hidden Git, symlink and wrong-digest inputs preserve targets', async (t) => {
     for (const kind of ['hidden', 'git', 'symlink', 'digest']) {
         const { root, options } = fixture(t);

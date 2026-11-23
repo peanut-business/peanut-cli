@@ -202,12 +202,12 @@ peanut release --with-local-core
 | --- | --- | --- | --- |
 | `--path` | Code 根目录 | 当前目录 | 选择脚手架源码根 |
 | `--version` | 版本号 | `release-versions.json.scaffold_template` | 匹配断言，不自动递增 |
-| `--core-php`, `--core-web` | 已发行版本 | 最新正式稳定版 | 选择 PHP/Web Core 版本；Web 六包同版 |
+| `--core-php`, `--core-web` | 已发行版本 | 未指定时由 Code 复用已锁本地归档；无归档声明才解析最新稳定版 | 显式选择 PHP/Web Core 公开版本；Web 六包同版 |
 | `--with-local-core` | 开关 | 默认不携带 | 携带 PHP Core 源码包和 Web Core 构建库包 |
 | `--output` | 路径 | 配置 `paths.release` 或 `./release` | 指定输出根；相对路径以 Code 根解析 |
 | `--overwrite` | 开关 | 已有版本默认拒绝 | 原位替换已知产物；存在未知内容时拒绝 |
 
-输出为“解析后的输出根/<版本>/{standalone,multi-tenant}”；仅当输出根为相对路径时才拼接 Code 根。本地 Core 配置目录不会自动随包携带；前端依赖采用 Core 构建库模式。CLI负责参数、环境调用、输出核对和原子采用；Code既有`prepare-product-release-candidate`负责输入准备、Core冻结/锁投影、依赖与API/inventory生成，`build-scaffold-release`负责Edition封装。环境未变时日常只需`peanut release`，不发布或部署。
+输出为“解析后的输出根/<版本>/{standalone,multi-tenant}”；仅当输出根为相对路径时才拼接 Code 根。Code 已锁定的本地 PHP ZIP 和六个 Web TGZ 随模板复用，声明的归档缺失或损坏时停止；本地 Core 源码配置目录不会自动随包携带，重新从源码构建须显式选择 `--with-local-core`。前端依赖采用 Core 构建库模式。CLI负责参数、环境调用、输出核对和原子采用；Code既有`prepare-product-release-candidate`负责输入准备、Core冻结/锁投影、依赖与API/inventory生成，`build-scaffold-release`负责Edition封装。环境未变时日常只需`peanut release`，不发布或部署。
 
 可选维护备份保存在私有 `host.json.release_database_backup`（`registry`、`resource_id`、`output`），不依赖任何固定私有仓库路径。启用后，CLI 在默认源码准备或固定 Git 制包之前调用 Code `scripts/export-release-database` 一次，两 Edition 共用该快照；失败即停止。普通开发备份按登记核对数据库、宿主与私有输出目录，并协调真实冲突写入，不要求额外 lease proof。SQL 使用登记远端容器内的原生 mysqldump；旧文件保全后原子替换，旁边 `.sql.json` 记录摘要和来源。SQL 与 receipt 不进入应用模板或发行附件；完整快照可能包含业务秘密，只能在合适的私有备份仓库管理，CLI 不自动提交或推送 Git。`build-scaffold-release --check` 不触发备份。
 

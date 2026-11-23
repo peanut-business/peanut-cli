@@ -126,6 +126,30 @@ test('module updates compares pinned versions using verified catalogs without PH
         { operation: 'updates', arguments: ['--channel', 'prerelease'], root: f.root });
 });
 
+test('v3 current policy blocks explicit historical installs and admits a fixed successor without downloading old indexes', async (t) => {
+    const f = fixture(t);
+    const old = f.add('1.0.40', { tag: 'v1.0.0' });
+    const fixed = f.add('1.0.47', { tag: 'v1.1.0', immutable: true });
+    Object.assign(fixed.index, { schema_version: 3, protocol: 'peanut.module-release-index.v3',
+        withdrawn: [{ key: 'peanut.file', version: '1.0.40', reason: 'Security fix required' }] });
+    Object.assign(fixed.index.modules[0], { artifact_tag: 'v1.1.0', source_sha256: 'b'.repeat(64) });
+    fixed.seal();
+    await assert.rejects(() => f.run(['--version', '1.0.40'], 'install'), /RELEASE_WITHDRAWN/);
+    assert.deepEqual(f.nativeCalls(), []);
+    assert.equal(f.applied(), false);
+    f.calls.length = 0;
+    assert.equal(await f.run(['--dry-run']), 0);
+    assert.ok(!f.calls.includes(old.base + MODULE_INDEX));
+    assert.ok(!f.calls.includes(old.base + old.name));
+    assert.equal(f.applied(), false);
+
+    delete fixed.index.withdrawn;
+    fixed.seal();
+    await assert.rejects(() => f.run(['--version', '1.0.40'], 'install'), /POLICY_INVALID/);
+    fixed.release.assets = [];
+    await assert.rejects(() => f.run(['--version', '1.0.40'], 'install'), /ASSET_INVALID/);
+});
+
 test('module update discovery fails on conflicting immutable version identities', async (t) => {
     const f = fixture(t);
     fs.mkdirSync(path.join(f.root, '.peanut'), { recursive: true });
