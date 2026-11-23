@@ -21,7 +21,37 @@ import { automaticEnvironment, inspectEnvironment } from '../lib/project-environ
 const toolRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const CLI_VERSION = readJsonObject(path.join(toolRoot, 'package.json')).version;
 
+const commandHelp = {
+    create: {
+        synopsis: 'peanut create <absolute-target> --name <name> --slug <slug> --package <vendor/name> [--edition standalone|multi-tenant] [--application-version <semver>] [--ref <version>] [--channel stable|prerelease]\n'
+        + '       peanut create <absolute-target> --name <name> --slug <slug> --package <vendor/name> --edition standalone|multi-tenant --archive <absolute-template.tgz> --manifest <absolute-template.json>\n'
+        + '       peanut create <absolute-target> --name <name> --slug <slug> --package <vendor/name> --edition multi-tenant --plan --module-release <tag> [--module-preset standard|minimal] [--module-channel stable|prerelease] [--modules <optional-key,...>]\n',
+        details: 'Interactive create prompts for an Edition when --edition is omitted; non-interactive create requires --edition.\n'
+        + 'Edition, profile and workflow are fixed by the selected template package; an explicit mismatch is refused.\n'
+        + 'Create --demo none|workbench defaults to none; the selection is recorded and workbench data is seeded only during first installation.\n'
+        + 'Standalone and multi-tenant are separate application artifacts and deployments; normal upgrades remain within the same Edition.\n'
+        + 'Create defaults to the latest official stable template attachment. Local archives require their paired manifest. No Git clone, PHP, dependency installation, database or service operation occurs. Target must be absent or strictly empty, including hidden files.\n'
+        + 'ST/MT create --plan stages the selected template and verified module catalog, then calls Code native composition planning. Use --module-php <absolute-php> and prepare the staged consumer native dependencies when missing. Resume with --composition-stage <returned-stage>; prepare with --plan-sha256 <reviewed-native-sha> instead of --plan. Only source-prepared consumers reach the target; database installation is separate. Offline input requires --module-index <absolute-json> --module-index-sha256 <trusted-sha> --module-channel prerelease and indexed TARs beside the index. Template and module channels are independent.\n',
+    },
+    upgrade: {
+        synopsis: 'peanut upgrade [--check|--plan|--yes] [--ref <version-or-tag>] [--channel stable|prerelease] [--confirm-major-upgrade] [--path <application>]\n'
+        + '       peanut upgrade [--check|--plan|--yes] --archive <absolute-template.tgz> --manifest <absolute-template.json> [--source-checkout <absolute-official-source>] [--baseline-mode-manifest <exact-old-release.json>] [--path <application>]\n'
+        + '       peanut upgrade --apply-plan <plan> [--confirm-plan-sha256 <digest> --preserve-paths <paths|-> --replace-paths <paths|->] [--confirm-major-upgrade] [--path <application>]\n'
+        + '       peanut upgrade --recover-plan <plan> [--path <application>]\n'
+        + '       Upgrade coordinator override: --coordinator-root <canonical-git-root> --coordinator-commit <40hex> --installation-source-commit <40hex> (all required; persisted for apply/recover).\n',
+        details: 'Fixed-release APP discovery stays within the current major; development APP checks the latest published release. Applying a development source transition requires explicit --ref.\n'
+        + 'Risk feature: cross-major upgrades may break custom business code, dependencies, APIs or migrations. Review the plan, keep a recoverable backup and resolve known risks before attempting apply.\n'
+        + 'Cross-major apply requires --confirm-major-upgrade. AI/Agent operators must explain source to target, risks and plan and obtain human authorization before passing this flag; prior explicit authorization for this upgrade or a defined cross-major scope is sufficient, but generic development authorization is not.\n',
+    },
+};
+const helpTopics = ['config', 'core', 'release', 'module', ...Object.keys(commandHelp)];
+
 function usage(topic = null) {
+    if (Object.hasOwn(commandHelp, topic)) {
+        const { synopsis, details } = commandHelp[topic];
+        process.stdout.write(`Usage: ${synopsis}\n${details}`);
+        return;
+    }
     if (topic === 'module') {
         process.stdout.write(
             '用法：peanut module <operation> [参数] [--root <APP目录>]\npeanut help module\n\n'
@@ -114,23 +144,17 @@ function usage(topic = null) {
     process.stdout.write(
         `Peanut CLI ${CLI_VERSION}\n`
         + 'Usage: peanut <command> [options]\n'
-        + '       peanut help [config|core|release|module]\n'
+        + `       peanut help [${helpTopics.join('|')}]\n`
         + '       peanut module <operation> [args] [--root <application>]\n'
         + '       peanut module upgrade peanut.file [--version <semver>] [--channel stable|prerelease] [--dry-run] [--root <application>]\n'
         + '       peanut module install peanut.file [--version <semver>] [--channel stable|prerelease] [--root <application>]\n'
         + '       peanut module updates [--channel stable|prerelease] [--root <application>]\n'
         + '       peanut config [--path <project-root>] [--php <path>] [--node <path>] [--npm <path>] [--pnpm <path>] [--composer <path>] [--python <path>] [--core-php <path>] [--core-web <path>] [--core-mode path|release] [--release <path>] [--backups <path>] [--pnpm-cache <path>] [--npm-cache <path>] [--composer-cache <path>] [--extra-path <path>]... [--watch-path <path>]... [--yes]\n'
         + '       peanut core [status|path|release] [--path <project-root>] [--core-php <path>] [--core-web <path>] [--client <all|web,platform,pc,uniapp>]\n'
-        + 'Usage: peanut create <absolute-target> --name <name> --slug <slug> --package <vendor/name> [--edition standalone|multi-tenant] [--application-version <semver>] [--ref <version>] [--channel stable|prerelease]\n'
-        + '       peanut create <absolute-target> --name <name> --slug <slug> --package <vendor/name> --edition standalone|multi-tenant --archive <absolute-template.tgz> --manifest <absolute-template.json>\n'
-        + '       peanut create <absolute-target> --name <name> --slug <slug> --package <vendor/name> --edition multi-tenant --plan --module-release <tag> [--module-preset standard|minimal] [--module-channel stable|prerelease] [--modules <optional-key,...>]\n'
+        + '       ' + commandHelp.create.synopsis
         + '       peanut doctor|status [--path <application>]\n'
         + '       peanut release [--path <scaffold>] [--version <semver>] [--core-php <version>] [--core-web <version>] [--with-local-core] [--output <path>] [--overwrite]\n'
-        + '       peanut upgrade [--check|--plan|--yes] [--ref <version-or-tag>] [--channel stable|prerelease] [--confirm-major-upgrade] [--path <application>]\n'
-        + '       peanut upgrade [--check|--plan|--yes] --archive <absolute-template.tgz> --manifest <absolute-template.json> [--source-checkout <absolute-official-source>] [--baseline-mode-manifest <exact-old-release.json>] [--path <application>]\n'
-        + '       peanut upgrade --apply-plan <plan> [--confirm-plan-sha256 <digest> --preserve-paths <paths|-> --replace-paths <paths|->] [--confirm-major-upgrade] [--path <application>]\n'
-        + '       peanut upgrade --recover-plan <plan> [--path <application>]\n'
-        + '       Upgrade coordinator override: --coordinator-root <canonical-git-root> --coordinator-commit <40hex> --installation-source-commit <40hex> (all required; persisted for apply/recover).\n'
+        + '       ' + commandHelp.upgrade.synopsis
         + '       peanut service collaboration plan|enable|status|disable --path <application> [--configuration <non-secret-json>] [--expected-revision <n>] [--probe] [--drain-id <original-id>]\n'
         + '       peanut recipe list|status [<id>] [--path <application>]\n'
         + '       peanut recipe add app-ci|scaffold-ci [--path <repository>]\n'
@@ -139,15 +163,8 @@ function usage(topic = null) {
         + 'config 参数：--path 项目根；--php/--node/--npm/--pnpm/--composer/--python 指定对应可执行文件；--core-php/--core-web 指定本地 Core 仓库（可相对 Code 根输入，按绝对路径保存；新工作区或目录位置变化后重新 config 并指定当前 Core 位置）；--release/--backups 设置发行与备份目录；--pnpm-cache/--npm-cache/--composer-cache 设置缓存；--extra-path/--watch-path 可重复指定搜索与观察路径。优先级为显式参数 > 已保存的有效配置 > 自动发现；未改动的配置直接复用，不重复选择。详见 peanut help config。\n'
         + 'release 参数：--path 脚手架项目根（默认当前目录）；--version 指定版本，必须等于 release-versions.json.scaffold_template；--core-php/--core-web 固定已发行 Core 版本；--with-local-core 使用 config 选择的本地 Core 快照；--output 指定发行根；--overwrite 仅允许覆盖该版本可识别的脚手架产物，遇到未知文件拒绝。\n'
         + 'release 默认输出到项目 ./release/<版本>/standalone 和 multi-tenant；不会自动递增版本。\n'
-        + 'Interactive create prompts for an Edition when --edition is omitted; non-interactive create requires --edition.\n'
-        + 'Edition, profile and workflow are fixed by the selected template package; an explicit mismatch is refused.\n'
-        + 'Create --demo none|workbench defaults to none; the selection is recorded and workbench data is seeded only during first installation.\n'
-        + 'Standalone and multi-tenant are separate application artifacts and deployments; normal upgrades remain within the same Edition.\n'
-        + 'Create defaults to the latest official stable template attachment. Local archives require their paired manifest. No Git clone, PHP, dependency installation, database or service operation occurs. Target must be absent or strictly empty, including hidden files.\n'
-        + 'ST/MT create --plan stages the selected template and verified module catalog, then calls Code native composition planning. Use --module-php <absolute-php> and prepare the staged consumer native dependencies when missing. Resume with --composition-stage <returned-stage>; prepare with --plan-sha256 <reviewed-native-sha> instead of --plan. Only source-prepared consumers reach the target; database installation is separate. Offline input requires --module-index <absolute-json> --module-index-sha256 <trusted-sha> --module-channel prerelease and indexed TARs beside the index. Template and module channels are independent.\n'
-        + 'Fixed-release APP discovery stays within the current major; development APP checks the latest published release. Applying a development source transition requires explicit --ref.\n'
-        + 'Risk feature: cross-major upgrades may break custom business code, dependencies, APIs or migrations. Review the plan, keep a recoverable backup and resolve known risks before attempting apply.\n'
-        + 'Cross-major apply requires --confirm-major-upgrade. AI/Agent operators must explain source to target, risks and plan and obtain human authorization before passing this flag; prior explicit authorization for this upgrade or a defined cross-major scope is sufficient, but generic development authorization is not.\n',
+        + commandHelp.create.details
+        + commandHelp.upgrade.details,
     );
 }
 
@@ -284,7 +301,7 @@ function parseUpgradeArguments(raw) {
 async function main() {
     if (process.argv[2] === 'help') {
         const topic = process.argv[3];
-        if (process.argv.length > 4 || (topic && !['config', 'core', 'release', 'module'].includes(topic))) throw new Error('PEANUT_HELP_TOPIC_INVALID');
+        if (process.argv.length > 4 || (topic && !helpTopics.includes(topic))) throw new Error('PEANUT_HELP_TOPIC_INVALID');
         usage(topic);
         return 0;
     }
@@ -314,6 +331,12 @@ async function main() {
         const { result, exitCode } = serviceCollaboration(parseCollaborationArguments(process.argv.slice(4)));
         output(result);
         return exitCode;
+    }
+    const commandTopic = process.argv[2];
+    if (Object.hasOwn(commandHelp, commandTopic) && process.argv.length === 4
+        && ['--help', '-h'].includes(process.argv[3])) {
+        usage(commandTopic);
+        return 0;
     }
     if (process.argv[2] === 'create') {
         const createOptions = await chooseCreateEdition(parseCreateArguments(process.argv.slice(3)));

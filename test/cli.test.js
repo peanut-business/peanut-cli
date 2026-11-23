@@ -179,6 +179,39 @@ test('version and help work without an application checkout', () => {
     assert.match(result.stdout, /recipe add app-ci/);
 });
 
+test('create and upgrade help work without an application checkout or filesystem changes', (t) => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'peanut-help-'));
+    t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
+    for (const [command, synopsis, options] of [
+        ['create', /^Usage: peanut create <absolute-target>/, /--archive.*--manifest/],
+        ['upgrade', /^Usage: peanut upgrade /, /--apply-plan.*--recover-plan/s],
+    ]) {
+        const run = (args) => spawnSync(process.execPath, [BIN, ...args], { cwd, encoding: 'utf8' });
+        const help = run(['help', command]);
+        assert.equal(help.status, 0, help.stderr);
+        assert.equal(help.stderr, '');
+        assert.match(help.stdout, synopsis);
+        assert.match(help.stdout, options);
+        for (const flag of ['--help', '-h']) {
+            const result = run([command, flag]);
+            assert.equal(result.status, 0, result.stderr);
+            assert.equal(result.stderr, '');
+            assert.equal(result.stdout, help.stdout);
+        }
+    }
+
+    for (const [args, error] of [
+        [['create', path.join(cwd, 'app'), '--name', '--help', '--unknown'], /PEANUT_CREATE_ARGUMENTS_INVALID/],
+        [['upgrade', '--ref=--help'], /PEANUT_UPGRADE_ARGUMENTS_INVALID/],
+    ]) {
+        const result = spawnSync(process.execPath, [BIN, ...args], { cwd, encoding: 'utf8' });
+        assert.equal(result.status, 2);
+        assert.equal(result.stdout, '');
+        assert.match(result.stderr, error);
+    }
+    assert.deepEqual(fs.readdirSync(cwd), []);
+});
+
 test('add installs exact recipe baseline without changing application identity', (t) => {
     const { app } = createFixture(t);
     const original = fs.readFileSync(path.join(app, '.peanut/application-manifest.json'));
