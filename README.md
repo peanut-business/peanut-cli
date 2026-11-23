@@ -281,7 +281,7 @@ peanut recipe add scaffold-ci --path /absolute/peanut-admin-code
 - `config` 先预览工具、推荐版本、路径、来源文件和写入对象，再由用户确认；`--yes` 只跳过最终确认，仍写入并调用 Code `scripts/project-env prepare`。它不消解歧义选择。拒绝确认不改文件；未提供新参数时复用有效绑定和路径。
 - 配置只登记已安装工具，不安装软件或修改全局 PATH。Core 要求分别来自其 `composer.json` / `package.json`；Core 源码只读，独立 host 位于项目 `.local/toolchain/cores/php|web/`。Core 首次选择继承主工具已选 scope，既有 Core scope 复用自身绑定。无显式目录、已保存配置和可写系统缓存时，主缓存回退到 `.local/toolchain/cache/{pnpm,npm,composer}`，Core 缓存回退到 `.local/toolchain/cores/{php,web}/cache/<tool>`。
 - 推荐版本差异只告警；manifest/platform 要求和原生锁仍受校验。外部 Composer 绑定本地路径、版本与文件 SHA-256，用于发现本地文件替换，不证明官方来源。
-- `release` 对当前磁盘源码快照发行（包含未提交内容），排除 Git 元数据、本地配置、依赖、运行数据和旧输出。Core 版本独立，Web 六包同版；Core 来源与摘要写入清单。默认不携带 Core 归档。
+- `release` 对当前磁盘源码快照发行（包含未提交内容），排除 Git 元数据、本地配置、依赖、运行数据和旧输出。Core 默认策略由目标脚手架实现；当前脚手架保留已锁定的本地 Core 归档，没有归档锁时解析正式稳定版。显式公开版本或 `--with-local-core` 沿对应入口选择来源。PHP 与 Web 版本独立，Web 六包同版；Core 来源与摘要写入清单，归档模式携带锁定制品。
 - 固定 Git/CI 流程可用 `--source-commit` 固定源码提交、`--workflow` 选择投影、`--internal-core-inputs` 消费内部候选冻结 Core 回执、`--api-tool-root` 选择 API 工具入口。它们须符合固定候选来源/工作流合同；普通本地发行不使用这些参数，不能用占位 Git 身份替代正式检查。
 
 The current source catalog separates `app-ci@1.0.0` from `scaffold-ci@1.0.0`. APP CI still calls the existing server-only producer with its explicit root; it has not been adapted to the product Git delivery workflow and is not a routine production prerequisite. Scaffold CI calls the same native template producer as `peanut release`, serially for both Editions, and uploads the four fixed template files. These workflows prepare candidates; formal GitHub publication still requires release qualification and authorized CI publication. The CLI repository's own release workflow publishes only CLI artifacts. Source installation does not publish or execute CI.

@@ -93,6 +93,8 @@ function usage(topic = null) {
             + '选项：\n'
             + '本地发行选项：\n'
             + '  --path <目录>                    Code 脚手架项目根，默认当前目录\n'
+            + '  --plan                           只读列出固定输入、已有制品与待执行阶段\n'
+            + '  --resume                         从同一输入的已知失败操作继续\n'
             + '  --version <版本>                 匹配 release-versions.json.scaffold_template\n'
             + '  --core-php <版本>                指定已发布 PHP Core 版本\n'
             + '  --core-web <版本>                指定已发布 Web Core 版本（六包同版）\n'
@@ -105,7 +107,7 @@ function usage(topic = null) {
             + '  --internal-core-inputs <回执>      消费固定内部候选的 Core 冻结回执；必须与该候选工作流组合使用\n'
             + '  --api-tool-root <目录>             固定 CI/API 工具入口根目录\n'
             + '高级选项用于已固定输入的维护流水线，普通本地发行无需填写；互斥或不完整组合会拒绝。\n\n'
-            + 'Core 默认选择最新正式稳定版；PHP 与 Web 版本独立，Web 六包保持同版。最终目录为 <output>/<版本>/standalone 和 multi-tenant。已存在同版本目录默认拒绝。可选 release_database_backup 维护配置启用后，在准备/双 Edition 制包前只导出一次原生 SQL；失败即停止，旧快照保存在 paths.backups，SQL 不进入应用包。备份默认关闭。Core 选择、来源和摘要写入包清单；默认不携带 Core 归档。此命令不发布或部署。\n',
+            + 'Core 默认策略由目标脚手架决定：当前脚手架保留已锁定的本地归档，没有归档锁时解析正式稳定版。显式 --core-php/--core-web 选择公开版本，--with-local-core 从登记的 Core 源码准备开发输入。PHP 与 Web 版本独立，Web 六包保持同版。最终目录为 <output>/<版本>/standalone 和 multi-tenant。已存在同版本目录默认拒绝。可选 release_database_backup 维护配置启用后，在准备/双 Edition 制包前只导出一次原生 SQL；失败即停止，旧快照保存在 paths.backups，SQL 不进入应用包。备份默认关闭。Core 选择、来源和摘要写入包清单；归档模式携带已锁定的固定制品。此命令不发布或部署。\n',
         );
         return;
     }
