@@ -271,15 +271,19 @@ test('manifest and explicit composition requests cannot bypass the planning boun
     assert.equal(fs.readFileSync(path.join(f.options.target, '.keep'), 'utf8'), 'WIP');
 });
 
-test('CLI create --plan returns a blocked MT JSON selection and exit 1 with no target writes', (t) => {
+test('CLI create --plan resolves its relative offline index and returns blocked without target writes', (t) => {
     const f = selectionFixture(t);
+    const cwd = path.join(f.root, 'Invocation Folder');
+    fs.mkdirSync(cwd);
+    const relative = (file) => path.relative(cwd, file);
     const args = Object.entries(f.offline).flatMap(([key, value]) => {
         if (key === 'target') return [];
         if (key === 'plan') return ['--plan'];
         const flag = '--' + key.replace(/[A-Z]/g, (letter) => '-' + letter.toLowerCase());
-        return [flag, value];
+        return [flag, ['archive', 'manifest', 'moduleIndex'].includes(key) ? relative(value) : value];
     });
-    const child = spawnSync(process.execPath, [bin, 'create', f.options.target, ...args], { encoding: 'utf8', timeout: 10000 });
+    const child = spawnSync(process.execPath, [bin, 'create', relative(f.options.target), ...args],
+        { cwd, encoding: 'utf8', timeout: 10000 });
     assert.equal(child.status, 1, child.stderr);
     const result = JSON.parse(child.stdout);
     assert.equal(result.status, 'blocked');
@@ -313,8 +317,10 @@ test('native plan identity is bound to exact index bytes and staging leaves targ
 
 test('reviewed native hash prepares same consumer before target promotion; application identity cannot change', async (t) => {
     const f = selectionFixture(t, () => {}, true);
-    const plan = await createProject(f.offline, f.noNetwork);
-    const apply = { ...f.offline, plan: false, compositionStage: plan.composition_stage, planSha256: plan.plan_sha256 };
+    const relative = (file) => path.relative(process.cwd(), file);
+    const options = { ...f.offline, modulePhp: relative(f.offline.modulePhp) };
+    const plan = await createProject(options, f.noNetwork);
+    const apply = { ...options, plan: false, compositionStage: relative(plan.composition_stage), planSha256: plan.plan_sha256 };
     await assert.rejects(createProject({ ...apply, slug: 'other' }, f.noNetwork), /STAGE_IDENTITY_MISMATCH/);
     const unknownHash = await createProject({ ...apply, planSha256: 'f'.repeat(64) }, f.noNetwork);
     assert.equal(unknownHash.status, 'blocked');

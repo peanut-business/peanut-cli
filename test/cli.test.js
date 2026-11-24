@@ -10,7 +10,7 @@ import { resolveWorkingRoot, sha256File } from '../lib/protocol.js';
 import { createProject } from '../lib/create-project.js';
 import { configureProject } from '../lib/configure.js';
 import { inspectCoreStatus, parseCoreArguments } from '../lib/core-dev.js';
-import { officialFixture } from './helpers/template-fixture.js';
+import { fixture, officialFixture } from './helpers/template-fixture.js';
 import { validateTemplatePackage } from '../lib/template-package.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -183,7 +183,7 @@ test('create and upgrade help work without an application checkout or filesystem
     const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'peanut-help-'));
     t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
     for (const [command, synopsis, options] of [
-        ['create', /^Usage: peanut create <absolute-target>/, /--archive.*--manifest/],
+        ['create', /^Usage: peanut create <target>/, /--archive.*--manifest/],
         ['upgrade', /^Usage: peanut upgrade /, /--apply-plan.*--recover-plan/s],
     ]) {
         const run = (args) => spawnSync(process.execPath, [BIN, ...args], { cwd, encoding: 'utf8' });
@@ -429,6 +429,32 @@ test('create refuses the retired Git-source option before obtaining source or wr
     assert.equal(result.status, 2);
     assert.match(result.stderr, /PEANUT_CREATE_ARGUMENTS_INVALID/);
     assert.equal(fs.existsSync(target), false);
+});
+
+test('create and upgrade check read fixed templates relative to their invocation directory', (t) => {
+    const f = fixture(t);
+    const cwd = path.join(f.root, 'Invocation Folder');
+    fs.mkdirSync(cwd);
+    const run = (...args) => spawnSync(process.execPath, [BIN, ...args], { cwd, encoding: 'utf8' });
+    const target = '../Created App';
+    const identity = ['--name', f.options.name, '--slug', f.options.slug, '--package', f.options.package,
+        '--edition', f.options.edition];
+    const archive = path.relative(cwd, f.options.archive);
+    const manifest = path.relative(cwd, f.options.manifest);
+    fs.symlinkSync(f.options.archive, path.join(cwd, 'archive link.tgz'));
+    const rejected = run('create', target, ...identity, '--archive', 'archive link.tgz', '--manifest', manifest);
+    assert.equal(rejected.status, 2);
+    assert.match(rejected.stderr, /PEANUT_CREATE_PATH_INVALID: --archive/);
+    assert.equal(fs.existsSync(path.resolve(cwd, target)), false);
+
+    const created = run('create', target, ...identity, '--archive=' + archive, '--manifest', manifest);
+    assert.equal(created.status, 0, created.stderr);
+    assert.equal(JSON.parse(created.stdout).target, path.resolve(cwd, target));
+
+    const check = run('upgrade', '--check', '--path', target, '--archive', archive, '--manifest=' + manifest);
+    assert.equal(check.status, 0, check.stderr);
+    assert.equal(JSON.parse(check.stdout).status, 'up_to_date');
+    assert.equal(fs.existsSync(path.resolve(cwd, target, '.peanut/upgrades')), false);
 });
 
 test('non-interactive create requires an explicit Edition', (t) => {

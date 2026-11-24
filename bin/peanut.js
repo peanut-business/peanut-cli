@@ -23,24 +23,26 @@ const CLI_VERSION = readJsonObject(path.join(toolRoot, 'package.json')).version;
 
 const commandHelp = {
     create: {
-        synopsis: 'peanut create <absolute-target> --name <name> --slug <slug> --package <vendor/name> [--edition standalone|multi-tenant] [--application-version <semver>] [--ref <version>] [--channel stable|prerelease]\n'
-        + '       peanut create <absolute-target> --name <name> --slug <slug> --package <vendor/name> --edition standalone|multi-tenant --archive <absolute-template.tgz> --manifest <absolute-template.json>\n'
-        + '       peanut create <absolute-target> --name <name> --slug <slug> --package <vendor/name> --edition multi-tenant --plan --module-release <tag> [--module-preset standard|minimal] [--module-channel stable|prerelease] [--modules <optional-key,...>]\n',
+        synopsis: 'peanut create <target> --name <name> --slug <slug> --package <vendor/name> [--edition standalone|multi-tenant] [--application-version <semver>] [--ref <version>] [--channel stable|prerelease]\n'
+        + '       peanut create <target> --name <name> --slug <slug> --package <vendor/name> --edition standalone|multi-tenant --archive <template.tgz> --manifest <template.json>\n'
+        + '       peanut create <target> --name <name> --slug <slug> --package <vendor/name> --edition multi-tenant --plan --module-release <tag> [--module-preset standard|minimal] [--module-channel stable|prerelease] [--modules <optional-key,...>]\n',
         details: 'Interactive create prompts for an Edition when --edition is omitted; non-interactive create requires --edition.\n'
         + 'Edition, profile and workflow are fixed by the selected template package; an explicit mismatch is refused.\n'
+        + 'Relative target, --archive, --manifest, --module-index, --module-php and --composition-stage paths use the current working directory.\n'
         + 'Create --demo none|workbench defaults to none; the selection is recorded and workbench data is seeded only during first installation.\n'
         + 'Standalone and multi-tenant are separate application artifacts and deployments; normal upgrades remain within the same Edition.\n'
         + 'Create defaults to the latest official stable template attachment. Local archives require their paired manifest. No Git clone, PHP, dependency installation, database or service operation occurs. Target must be absent or strictly empty, including hidden files.\n'
-        + 'ST/MT create --plan stages the selected template and verified module catalog, then calls Code native composition planning. Use --module-php <absolute-php> and prepare the staged consumer native dependencies when missing. Resume with --composition-stage <returned-stage>; prepare with --plan-sha256 <reviewed-native-sha> instead of --plan. Only source-prepared consumers reach the target; database installation is separate. Offline input requires --module-index <absolute-json> --module-index-sha256 <trusted-sha> --module-channel prerelease and indexed TARs beside the index. Template and module channels are independent.\n',
+        + 'ST/MT create --plan stages the selected template and verified module catalog, then calls Code native composition planning. Use --module-php <php> and prepare the staged consumer native dependencies when missing. Resume with --composition-stage <returned-stage>; prepare with --plan-sha256 <reviewed-native-sha> instead of --plan. Only source-prepared consumers reach the target; database installation is separate. Offline input requires --module-index <json> --module-index-sha256 <trusted-sha> --module-channel prerelease and indexed TARs beside the index. Template and module channels are independent.\n',
     },
     upgrade: {
         synopsis: 'peanut upgrade [--check|--plan|--yes] [--ref <version-or-tag>] [--channel stable|prerelease] [--confirm-major-upgrade] [--path <application>]\n'
-        + '       peanut upgrade [--check|--plan|--yes] --archive <absolute-template.tgz> --manifest <absolute-template.json> [--source-checkout <absolute-official-source>] [--baseline-mode-manifest <exact-old-release.json>] [--path <application>]\n'
+        + '       peanut upgrade [--check|--plan|--yes] --archive <template.tgz> --manifest <template.json> [--source-checkout <official-source-checkout>] [--baseline-mode-manifest <exact-old-release.json>] [--path <application>]\n'
         + '       peanut upgrade --apply-plan <plan> [--confirm-plan-sha256 <digest> --preserve-paths <paths|-> --replace-paths <paths|->] [--confirm-major-upgrade] [--path <application>]\n'
         + '       peanut upgrade --recover-plan <plan> [--path <application>]\n'
         + '       Upgrade coordinator override: --coordinator-root <canonical-git-root> --coordinator-commit <40hex> --installation-source-commit <40hex> (all required; persisted for apply/recover).\n',
         details: 'Fixed-release APP discovery stays within the current major; development APP checks the latest published release. Applying a development source transition requires explicit --ref.\n'
         + 'Risk feature: cross-major upgrades may break custom business code, dependencies, APIs or migrations. Review the plan, keep a recoverable backup and resolve known risks before attempting apply.\n'
+        + 'Relative --path, --archive, --manifest, --source-checkout, --baseline-mode-manifest and --coordinator-root paths use the current working directory. Relative --apply-plan and --recover-plan paths use the selected APP root.\n'
         + 'Cross-major apply requires --confirm-major-upgrade. AI/Agent operators must explain source to target, risks and plan and obtain human authorization before passing this flag; prior explicit authorization for this upgrade or a defined cross-major scope is sufficient, but generic development authorization is not.\n',
     },
 };
@@ -57,12 +59,13 @@ function usage(topic = null) {
             '用法：peanut module <operation> [参数] [--root <APP目录>]\npeanut help module\n\n'
             + `操作：${MODULE_OPERATIONS.join(', ')}\n\n`
             + '默认向上查找 APP 根；在 .peanut/scaffold-baseline 内须用 --root 指定项目根。--root 自身相对当前工作目录解析。本地包及其他操作的参数原样传给 APP，操作参数帮助使用 peanut module <operation> --help。\n'
+            + '本地 adopt/install/upgrade 的 TAR、pack 的 --output 等原生相对路径以 APP 根解析。\n'
             + '在线：peanut module upgrade|install peanut.file [--version 1.0.47] [--channel stable|prerelease] [--root APP]\n'
             + '发现更新：peanut module updates [--channel stable|prerelease] [--root APP]（只读、无需本机 PHP/环境登记；安装仍须原生预检）。\n'
-            + 'upgrade 支持 --dry-run；install 原生入口尚不支持 dry-run，显式请求将拒绝。\n'
+            + '在线 upgrade 和 install 支持 --dry-run，由 APP 原生预检处理。\n'
             + '在线默认选择最高兼容稳定模块版本；精确 RC 也必须 --channel prerelease。仅使用 peanut-opensource/peanut-module-code 已发布 Release 的 module-release-index.json 和 tar 附件，并按 GitHub API assets[].digest 验证两者。缓存位于 APP .local/module-downloads，每次重新下载验 SHA；原生预检和受控写入负责 Edition、依赖、权限及已安装版本，禁止降级。\n'
             + '模块操作复用 APP scripts/project-env 选择 PHP，并通过 JSON stdin 调用 server/module，无需 HTTP 服务。新协议 v2 自动发现已安装工具，无需首次运行 peanut config；仅旧 APP 的本机 host 或需要指定特殊工具/Core 时才运行 peanut config。\n'
-            + '模块包默认输出至 APP 配置 paths.release 下的 modules（默认 release/modules）；相对发行路径以 APP 根解析。操作结果和退出码由 APP 返回。\n',
+            + '模块包默认输出至 APP 配置 paths.release 下的 modules（默认 release/modules）；paths.release 相对 APP 根解析。操作结果和退出码由 APP 返回。\n',
         );
         return;
     }
@@ -76,8 +79,8 @@ function usage(topic = null) {
             + '  release (reset|unlink|fixed)      一键重置并同步回 composer.lock / package.json 锁定的正式发行版\n\n'
             + '选项：\n'
             + '  --path <目录>                     项目根（默认从当前目录向上自动查找）\n'
-            + '  --core-php <目录>                 指定本地 PHP Core 目录（仅 path 模式）\n'
-            + '  --core-web <目录>                 指定本地 Web Core 目录（仅 path 模式）\n'
+            + '  --core-php <目录>                 指定本地 PHP Core 目录（相对项目根）\n'
+            + '  --core-web <目录>                 指定本地 Web Core 目录（相对项目根）\n'
             + '  --client <all|web,platform,pc,uniapp>  仅操作或检查指定前端端（默认 all）\n',
         );
         return;
@@ -86,7 +89,7 @@ function usage(topic = null) {
         process.stdout.write(
             '用法：peanut config [选项]\npeanut help config\n\n'
             + '为当前 Peanut Admin Code 项目或已创建应用选择本机已安装工具，并写入忽略目录 .local/toolchain/host.json；随后调用现有 scripts/project-env prepare。不会安装软件或修改全局 PATH。默认从当前目录向上查找所在项目根；在 .peanut/scaffold-baseline 内须用 --path 指定项目根。普通 config 保留原生 Core 选择；生成 APP 默认使用锁定依赖，可显式选择 path 联合开发。\n\n'
-            + '路径基准：--path 自身相对当前工作目录解析；其余工具路径及 Core host 中的 commands/caches/extra_path/watch_paths 相对所选 Code 根。维护数据库登记和 SQL 快照只接受绝对路径。Core 目录可相对 Code 根输入，配置始终保存绝对路径；.local 配置不随 Git 合并，新工作区或目录位置变化后须重新 config 并指定当前 Core 位置。\n\n'
+            + '路径基准：--path 相对当前工作目录；工具、Core 源码、缓存和输出参数相对所选项目根。host 中工具路径按 path_base（缺省为项目根），paths.release 和 core.php/web 按项目根。维护数据库登记与 SQL 快照使用绝对路径。已保存的 Core 目录为绝对路径，迁移工作区后重新 config 绑定。\n\n'
             + '选项：\n'
             + '  --path <目录>                   Code 或生成 APP 根，默认从当前目录向上查找\n'
             + '  --php <文件>                    PHP 可执行文件\n'
@@ -118,13 +121,13 @@ function usage(topic = null) {
     if (topic === 'release') {
         process.stdout.write(
             '用法：peanut release [选项]\npeanut help release\n\n'
-            + '使用 Code 项目配置的工具环境调用其 scripts/build-scaffold-release，生成 Standalone 与 Multi-tenant 两个脚手架包；失败即停止。默认项目根为当前目录。\n\n'
-            + '路径基准：--path 指定的项目根（默认当前目录）。--output 与 host 中 paths.release 可用相对或绝对路径；相对路径以项目根为基准。\n\n'
+            + '使用 Code 项目配置的工具环境调用其 scripts/build-scaffold-release，生成 Standalone 与 Multi-tenant 两个脚手架包；失败即停止。默认从当前目录向上查找 Code 根。\n\n'
+            + '路径基准：--path、--internal-core-inputs 与 --api-tool-root 相对当前工作目录；--output 与 host.paths.release 相对选中的 Code 根。两种基准均支持绝对路径。\n\n'
             + '选项：\n'
             + '本地发行选项：\n'
-            + '  --path <目录>                    Code 脚手架项目根，默认当前目录\n'
+            + '  --path <目录>                    Code 脚手架项目根，默认向上自动查找\n'
             + '  --plan                           只读列出固定输入、已有制品与待执行阶段\n'
-            + '  --resume                         从同一输入的已知失败操作继续\n'
+            + '  --resume                         在保留原项目、输出和构建参数的情况下继续已知失败操作\n'
             + '  --version <版本>                 匹配 release-versions.json.scaffold_template\n'
             + '  --core-php <版本>                指定已发布 PHP Core 版本\n'
             + '  --core-web <版本>                指定已发布 Web Core 版本（六包同版）\n'
@@ -158,10 +161,10 @@ function usage(topic = null) {
         + '       peanut service collaboration plan|enable|status|disable --path <application> [--configuration <non-secret-json>] [--expected-revision <n>] [--probe] [--drain-id <original-id>]\n'
         + '       peanut recipe list|status [<id>] [--path <application>]\n'
         + '       peanut recipe add app-ci|scaffold-ci [--path <repository>]\n'
-        + '路径规则：config/release 的路径参数可用相对或绝对路径；相对路径均以所选项目根为基准。\n'
+        + '路径规则：--path 和 module --root 相对当前工作目录；release --output、config 的工具和 Core 源码相对所选项目根。详见各命令帮助。\n'
         + 'config 配置已安装工具并写入项目 .local/toolchain/host.json，不安装软件、不修改全局 PATH。缺省从 PATH 和常见安装目录发现工具；多个版本会交互选择，并显示推荐版本与实际版本差异。\n'
         + 'config 参数：--path 项目根；--php/--node/--npm/--pnpm/--composer/--python 指定对应可执行文件；--core-php/--core-web 指定本地 Core 仓库（可相对 Code 根输入，按绝对路径保存；新工作区或目录位置变化后重新 config 并指定当前 Core 位置）；--release/--backups 设置发行与备份目录；--pnpm-cache/--npm-cache/--composer-cache 设置缓存；--extra-path/--watch-path 可重复指定搜索与观察路径。优先级为显式参数 > 已保存的有效配置 > 自动发现；未改动的配置直接复用，不重复选择。详见 peanut help config。\n'
-        + 'release 参数：--path 脚手架项目根（默认当前目录）；--version 指定版本，必须等于 release-versions.json.scaffold_template；--core-php/--core-web 固定已发行 Core 版本；--with-local-core 使用 config 选择的本地 Core 快照；--output 指定发行根；--overwrite 仅允许覆盖该版本可识别的脚手架产物，遇到未知文件拒绝。\n'
+        + 'release 参数：--path 脚手架项目根（默认向上查找）；--version 指定版本，必须等于 release-versions.json.scaffold_template；--core-php/--core-web 固定已发行 Core 版本；--with-local-core 使用 config 选择的本地 Core 快照；--output 指定发行根；--overwrite 仅允许覆盖该版本可识别的脚手架产物，遇到未知文件拒绝。\n'
         + 'release 默认输出到项目 ./release/<版本>/standalone 和 multi-tenant；不会自动递增版本。\n'
         + commandHelp.create.details
         + commandHelp.upgrade.details,
@@ -498,6 +501,13 @@ async function main() {
 try {
     process.exitCode = await main();
 } catch (error) {
-    process.stderr.write(`peanut: ${error.message}\n`);
+    let { message } = error;
+    if (message.startsWith('PEANUT_BUILD_RESUME_REQUIRED:')) {
+        message = message.replace(/^PEANUT_BUILD_RESUME_REQUIRED: peanut release --path "(?:[^"\\]|\\.)*" --resume;/,
+            'PEANUT_BUILD_RESUME_REQUIRED: repeat the original command with --resume and the same project, --output and build options;');
+    } else if (message === 'PEANUT_BUILD_RESUME_OPERATION_NOT_FOUND_FOR_CURRENT_INPUTS') {
+        message += ': check the original project, --output and build options';
+    }
+    process.stderr.write(`peanut: ${message}\n`);
     process.exitCode = 2;
 }

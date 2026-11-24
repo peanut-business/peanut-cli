@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { buildProject, parseBuildArguments } from '../lib/build-project.js';
 
 // Native producer stand-in tests only orchestration and immutable output reuse.
@@ -101,16 +103,33 @@ test('completed originals remain intact but cannot reuse a changed native execut
     assert.equal(f.state().value.result.packages[0].archive.sha256, originalSha);
 });
 
-test('known failed MT build resumes only MT and retains original failed files', t => {
+test('known failed MT build resumes from the same project-relative output and retains original failed files', t => {
     const f = fixture(t);
+    const bin = fileURLToPath(new URL('../bin/peanut.js', import.meta.url));
+    const cwd = path.join(f.root, '.local', 'Invocation Folder');
+    fs.mkdirSync(cwd);
+    const project = ['--path', '../..', '--source-commit', f.options.sourceCommit];
+    const output = ['--output', 'release/Build Outputs'];
+    const run = (...args) => spawnSync(process.execPath, [bin, 'release', ...project, ...args], { cwd, encoding: 'utf8' });
+    const planned = run('--plan', ...output);
+    assert.equal(planned.status, 0, planned.stderr);
+    assert.equal(JSON.parse(planned.stdout).output, path.join(f.root, output[1], '1.0.0'));
     f.write('.local/control.json', { failEdition: 'multi-tenant' });
-    assert.throws(() => f.run(), /COMMAND_FAILED/);
+    const failed = run(...output);
+    assert.equal(failed.status, 2);
+    assert.match(failed.stderr, /COMMAND_FAILED/);
     assert.equal(f.state().value.status, 'failed');
     assert.equal(f.state().value.editions.standalone.archive_sha256.length, 64);
-    assert.throws(() => f.run(), /RESUME_REQUIRED/);
+    const blocked = run(...output);
+    assert.equal(blocked.status, 2);
+    assert.match(blocked.stderr, /RESUME_REQUIRED:.*--resume.*--output/);
+    const otherOutput = run('--resume');
+    assert.equal(otherOutput.status, 2);
+    assert.match(otherOutput.stderr, /RESUME_OPERATION_NOT_FOUND_FOR_CURRENT_INPUTS/);
     f.write('.local/control.json', {});
-    const result = f.run({ resume: true });
-    assert.equal(result.status, 'released');
+    const resumed = run(...output, '--resume');
+    assert.equal(resumed.status, 0, resumed.stderr);
+    assert.equal(JSON.parse(resumed.stdout).status, 'released');
     assert.deepEqual(f.calls().map(row => row.edition), ['standalone', 'multi-tenant', 'multi-tenant']);
     const retained = f.state().value.retained_failed_outputs;
     assert.equal(retained.length, 1);

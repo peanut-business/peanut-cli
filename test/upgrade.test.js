@@ -277,7 +277,10 @@ test('native development binding forwards checkout and retains proof through sav
     for (const workflowPresent of [true, false]) {
         const f = await developmentBindingFixture(t, '', workflowPresent);
         const before = fs.readFileSync(f.manifestPath);
-        const planned = await upgradeProject({ ...f.upgrade, plan: true }, offline);
+        const relative = (file) => path.relative(process.cwd(), file);
+        const planned = await upgradeProject({ ...f.upgrade, plan: true,
+            archive: relative(f.upgrade.archive), manifest: relative(f.upgrade.manifest),
+            sourceCheckout: relative(f.checkout) }, offline);
         assert.equal(planned.status, 'blocked');
         const bindingDirectory = path.join(f.options.target, '.peanut/upgrades/engine-bindings');
         const bindingFile = path.join(bindingDirectory, fs.readdirSync(bindingDirectory)[0]);
@@ -288,13 +291,13 @@ test('native development binding forwards checkout and retains proof through sav
         assert.equal(binding.development_source.workflow, 'runtime');
         assert.equal(binding.development_source.workflow_present, workflowPresent);
         assert.equal(binding.development_source.workflow_paths_sha256, workflowPresent ? null : sha256('[]'));
-        const applied = await upgradeProject({ path: f.options.target, applyPlan: planned.plan_path,
+        const applied = await upgradeProject({ path: f.options.target, applyPlan: path.relative(f.options.target, planned.plan_path),
             confirmPlanSha256: planned.plan.plan_sha256, preservePaths: 'README.md', replacePaths: '-' }, offline);
         assert.equal(applied.status, 'verified');
         const resolvedBinding = fs.readdirSync(bindingDirectory).map(name => JSON.parse(fs.readFileSync(path.join(bindingDirectory, name)))).find(value => value.plan_path.endsWith('/ready.json'));
         assert.deepEqual(resolvedBinding.development_source, binding.development_source);
         assert.equal(resolvedBinding.source_checkout, binding.source_checkout);
-        await upgradeProject({ path: f.options.target, recoverPlan: applied.plan_path }, offline);
+        await upgradeProject({ path: f.options.target, recoverPlan: path.relative(f.options.target, applied.plan_path) }, offline);
         const calls = fs.readFileSync(path.join(f.options.target, 'consumer-calls.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
         assert.deepEqual(calls.map(([command]) => command), ['template-plan', 'resolve', 'apply', 'verify', 'recover']);
         assert.equal(calls[0][1]['source-checkout'], f.checkout);

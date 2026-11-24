@@ -15,7 +15,7 @@ peanut module updates --channel prerelease --root /absolute/app
 peanut upgrade --check --path /absolute/app
 ```
 
-`release --plan` 只读列出本次版本、来源选择、相关输入指纹、已有制品和待执行阶段，不安装依赖、不写操作状态。正常 release 首次准备并生产双 Edition；同一输入已有完整原件时重核字节后返回 `reused`。已知失败用 `--resume` 沿原工作区继续：ST 已成功、MT 失败时不重打 ST；原生依赖/生成阶段也保留完成证据。改变源码、工具/依赖输入或污染已完成输出会拒绝复用。未知仍在途结果不自动重提交。已发布版本永远不覆盖，本地 `--overwrite` 也不是改写公共 Release 的授权。
+`release --plan` 只读列出本次版本、来源选择、相关输入指纹、已有制品和待执行阶段，不安装依赖、不写操作状态。正常 release 首次准备并生产双 Edition；同一输入已有完整原件时重核字节后返回 `reused`。已知失败时保留原项目、输出和构建参数，加上 `--resume` 沿原工作区继续：ST 已成功、MT 失败时不重打 ST；原生依赖/生成阶段也保留完成证据。改变源码、工具/依赖输入或污染已完成输出会拒绝复用。未知仍在途结果不自动重提交。已发布版本永远不覆盖，本地 `--overwrite` 也不是改写公共 Release 的授权。
 
 目标脚手架的 `execution_protocol` 支持 `peanut.project-env.v2` 时，诊断和原生命令自动走其 `doctor` / `run`，不再强制每个工作区有 host.json。已有本机配置、显式共享 `PEANUT_TOOLCHAIN_PROFILE`、环境覆盖和自动发现按该原生合同验证；只有缺工具或明确配置漂移才需人工修正。`config` 保留为需要绑定特殊工具、本地 Core 或自定输出路径时的可选入口。历史脚手架继续其原 config/prepare/exec 合同，不把新版 CLI 冒充上游升级。
 
@@ -38,7 +38,15 @@ npm install -g .
 npm install -g /path/to/peanut-admin-cli-X.Y.Z.tgz
 ```
 
-按命令操作对象选择工作目录：`config` 使用选定的 Peanut Admin Code 或生成 APP 根，`release` 使用 Code 根；`doctor`、`status`、`upgrade`、`recipe` 使用对应 APP 或脚手架根；`create` 的第一个参数是新目标目录。支持 `--path` 的命令可用它选择根目录；它自身相对当前目录解析，config/release 的其他路径相对选定项目根解析。普通子目录向上寻根；在 `.peanut/scaffold-baseline` 及其子目录中须用 `--path` 指定实际项目根，`module` 用 `--root`。临时 worktree 是独立根。普通用户运行已安装的 `peanut`；CLI 内部调用所选项目的 `scripts/project-env`，制包调用 Code 的 `scripts/build-scaffold-release`，不直接运行 CLI 源码仓 `bin/peanut.js`。
+`config` 使用选定的 Peanut Admin Code 或生成 APP 根，`release` 使用 Code 根。`doctor`、`status`、`upgrade`、`recipe` 使用对应 APP 或脚手架根。普通子目录可以向上自动寻根。进入 `.peanut/scaffold-baseline` 或其子目录时，用 `--path` 显式选择实际项目根，`module` 使用 `--root`。临时 worktree 是独立项目根。CLI 通过所选项目的 `scripts/project-env` 选用工具，通过 Code 的 `scripts/build-scaffold-release` 制包。
+
+| 相对路径基准 | 参数和配置项 |
+| --- | --- |
+| 调用 `peanut` 时的当前目录 | 所有 `--path`、`module --root`；`create` 目标和 `--archive`、`--manifest`、`--module-index`、`--module-php`、`--composition-stage`；`upgrade --archive`、`--manifest`、`--source-checkout`、`--baseline-mode-manifest`、`--coordinator-root`；`release --internal-core-inputs`、`--api-tool-root` |
+| 所选 Code 或 APP 根 | `config` 中工具、Core 源码、缓存、发行和备份目录参数；`core --core-php`、`--core-web`；`release --output` 和 `host.paths.release`；`module pack --output` 及原生操作的相对 TAR；`upgrade --apply-plan`、`--recover-plan` |
+| 清单所在目录 | 离线模块索引中的 TAR 附件名按索引目录解析。固定 Core 归档由原生工具读取，Composer 的相对 ZIP 按 `server/`，客户端的 `file:` TGZ 按各客户端目录解析。 |
+
+各项都接受绝对路径。含空格的路径应在 shell 中加引号。配置里的 `commands`、`caches`、`extra_path`、`watch_paths` 按 `host.path_base`（缺省为项目根）解析。`host.paths.release`、`host.core.php`、`host.core.web` 按项目根解析。维护数据库登记和 SQL 快照继续使用绝对路径。
 
 CLI 安装和环境配置是首次准备。环境与路径不变时，日常生成脚手架只需 `peanut release`，无需手动 prepare/install/hash。
 
@@ -98,7 +106,7 @@ native Edition, dependency, authorization and runtime admission check.
 To check the independent Scaffold release use `peanut upgrade --check --path
 /absolute/app`; a newer Scaffold does not silently upgrade installed modules.
 
-公开入口为 `peanut module <operation> [参数] [--root <APP目录>]`，支持 `create`、`check`、`compile`、`pack`、`adopt`、`install`、`upgrade`、`disable`、`uninstall`、`sync`、`reconcile`、`make`、`lock`、`release-composition`、`work`。默认向上查找 APP 根；`--root` 可用相对或绝对路径，自身相对当前工作目录解析。本地 tar 与其他操作仍只消费 `--root`，其余参数按原顺序交给 APP；`--` 后不再解析 `--root`。各原生操作参数以 `peanut module <operation> --help` 为准；在线参数见 `peanut help module`。
+公开入口为 `peanut module <operation> [参数] [--root <APP目录>]`，支持 `create`、`check`、`compile`、`pack`、`adopt`、`install`、`upgrade`、`disable`、`uninstall`、`sync`、`reconcile`、`make`、`lock`、`release-composition`、`work`。默认向上查找 APP 根；`--root` 可用相对或绝对路径，自身相对当前工作目录解析。CLI 将其余参数按原顺序交给 APP；`--` 后停止识别 `--root`。选定 APP 根也是原生命令的工作目录，`pack --output` 和 `adopt`、`install`、`upgrade` 接收的相对 TAR 都以 APP 根为基准。各原生操作参数以 `peanut module <operation> --help` 为准；在线参数见 `peanut help module`。
 
 `upgrade|install peanut.<模块名>` 从固定公共仓库 `peanut-opensource/peanut-module-code` 的 GitHub Release 附件获取模块。默认 `--channel stable`，在所有已发布 Release 的索引中独立按模块 SemVer 选择最高兼容稳定版；仓库 Tag 和模块版本可以不同。`--version` 只接受精确版本，精确 RC 也必须显式 `--channel prerelease`；该通道允许稳定版和预发行版。草稿、未发布 Release、原始 HEAD、候选目录、本地 tar 都不会成为在线发现的替代来源。没有已发布附件即报错，不伪称已安装。
 
@@ -158,7 +166,7 @@ peanut create /absolute/new-app --name Example --slug example --package example/
 
 在线核验显式 tag 的已发布不可变 Release、API digest 固定的索引及 catalog TAR；离线核验显式索引、独立 SHA 和同目录 TAR，不声称验证了 GitHub 发行状态。两者保留原始索引字节、commit 和精确制品身份，完整依赖闭包交给 Code。模板与模块渠道独立，RC 须显式选择；离线只接受显式 prerelease。缺少组合清单的旧模板不能规划外置组合。
 
-`--plan` 返回私有 `composition_stage` 与暂存消费者，通过显式 `--module-php /absolute/php` 调用 Code 原生 plan；缺本消费者的 bridge/vendor 时报告精确 blocker 并保留暂存目录。依赖须通过该消费者原生工具准备，不复制其他应用 vendor。重复同一固定参数并加 `--composition-stage` 可继续 plan。审阅后用 `--plan-sha256 <native-sha>` 替换 `--plan`，Code 在原 writer 内复算并比较 hash，原生 `source-prepared` 成功后才提升到目标，返回 `source-created`。错误保留原生退出码、诊断和恢复身份；目标在 plan 或失败时不写入。完整命令、离线约束及恢复见 [MT 组合合同](docs/mt-create-module-planning.md)。以上命令是 MT 示例；选择 ST 时将 Edition 参数改为 standalone，并同时使用独立 ST 模板原件及与 ST 兼容的 Module 发行索引。当前官方 ST/MT 模板是薄模板，默认不带官方模块源码，modules.lock 为空。需要模块时由模块专用开发应用独立发行，消费者按实际选择和依赖闭包采用；CLI plan 只确认源码范围，不执行依赖/API/模块编译、数据库首装或业务验收。
+`--plan` 返回私有 `composition_stage` 与暂存消费者，通过显式 `--module-php <php路径>` 调用 Code 原生 plan；缺本消费者的 bridge/vendor 时报告精确 blocker 并保留暂存目录。依赖须通过该消费者原生工具准备，不复制其他应用 vendor。重复同一固定参数并加 `--composition-stage` 可继续 plan。审阅后用 `--plan-sha256 <native-sha>` 替换 `--plan`，Code 在原 writer 内复算并比较 hash，原生 `source-prepared` 成功后才提升到目标，返回 `source-created`。错误保留原生退出码、诊断和恢复身份；目标在 plan 或失败时不写入。完整命令、离线约束及恢复见 [MT 组合合同](docs/mt-create-module-planning.md)。以上命令是 MT 示例；选择 ST 时将 Edition 参数改为 standalone，并同时使用独立 ST 模板原件及与 ST 兼容的 Module 发行索引。当前官方 ST/MT 模板是薄模板，默认不带官方模块源码，modules.lock 为空。需要模块时由模块专用开发应用独立发行，消费者按实际选择和依赖闭包采用；CLI plan 只确认源码范围，不执行依赖/API/模块编译、数据库首装或业务验收。
 
 在 v2 自动发现工具的应用上无需首次强制配置；仅旧 APP 或确需固定特殊工具/Core 时使用 `peanut config --path /absolute/app` 配置工具。模块命令通过 APP 的 `scripts/project-env` 选择 PHP，执行内部 `server/module`，以 stdin JSON `{ "operation": "check", "arguments": [] }` 传参；无需 HTTP 或启动站点。APP 的 stdout、stderr 与退出码直接返回，失败不会包装成成功。
 
@@ -174,7 +182,7 @@ peanut config --path /absolute/peanut-admin-code --yes
 
 | 参数 | 取值 | 默认或复用 | 作用 |
 | --- | --- | --- | --- |
-| `--path` | Code 或生成 APP 根目录 | 当前目录 | 选择配置项目；自身相对当前目录解析 |
+| `--path` | Code 或生成 APP 根目录 | 从当前目录向上自动查找 | 选择配置项目；自身相对当前目录解析 |
 | `--php`, `--node`, `--npm`, `--pnpm`, `--composer`, `--python` | 已安装工具路径 | 显式参数 > 有效配置 > 自动发现 | 选择本机工具；首次配置 Core 时沿用本项目已选择的工具；已有 Core 配置时保留其已选工具 |
 | `--core-php`, `--core-web` | 本地 Core 源码目录（可相对所选项目根） | 显式参数 > 已保存选择（含 `null`）；Code 可邻接发现 | 始终保存绝对路径，固定绑定实际 Core 位置；生成 APP 默认不发现相邻源码仓，使用模板锁定的 Core 依赖；显式选择源码可用于联合开发 |
 | `--core-mode` | `path` 或 `release` | 省略时保留原生选择 | 显式切换依赖；需项目提供 `scripts/core-dev`。`release` 不接受 Core 路径参数 |
@@ -200,7 +208,7 @@ peanut release --with-local-core
 
 | 参数 | 取值 | 默认或复用 | 作用 |
 | --- | --- | --- | --- |
-| `--path` | Code 根目录 | 当前目录 | 选择脚手架源码根 |
+| `--path` | Code 根目录 | 从当前目录向上自动查找 | 选择脚手架源码根；相对路径以调用目录解析 |
 | `--version` | 版本号 | `release-versions.json.scaffold_template` | 匹配断言，不自动递增 |
 | `--core-php`, `--core-web` | 已发行版本 | 未指定时由 Code 复用已锁本地归档；无归档声明才解析最新稳定版 | 显式选择 PHP/Web Core 公开版本；Web 六包同版 |
 | `--with-local-core` | 开关 | 默认不携带 | 携带 PHP Core 源码包和 Web Core 构建库包 |
@@ -217,17 +225,17 @@ peanut release --with-local-core
 
 ```sh
 peanut create /absolute/new-app --name "Business App" --slug business-app --package example/business-app --edition standalone
-peanut create /absolute/new-app --name "Business App" --slug business-app --package example/business-app --edition standalone --archive /absolute/template.tgz --manifest /absolute/template.json
+peanut create './Business App' --name "Business App" --slug business-app --package example/business-app --edition standalone --archive './artifacts/template.tgz' --manifest './artifacts/template.json'
 ```
 
 | 参数 | 必需/默认 | 说明 |
 | --- | --- | --- |
-| `<目标>` | 必需，绝对路径 | 目标必须不存在或为空目录 |
+| `<目标>` | 必需 | 相对路径以调用目录解析；目标必须不存在或为空目录 |
 | `--name`, `--slug`, `--package` | 必需 | 产品名、应用 slug、`vendor/name` |
 | `--edition` | 交互终端可选择；非交互必需 | `standalone` 或 `multi-tenant`，没有隐式默认 |
 | `--application-version` | 模板声明的默认值 | 设置独立 APP 版本 |
 | `--ref` | 最新 stable | 固定官方模板版本；`--channel` 可选 `stable`/`prerelease` |
-| `--archive`, `--manifest` | 必须成对 | 使用绝对路径本地包；不可与 `--ref`/`--channel` 同用 |
+| `--archive`, `--manifest` | 必须成对 | 使用固定本地包；相对路径以调用目录解析。不可与 `--ref`、`--channel` 同用 |
 | `--profile`, `--workflow` | 模板固定值 | 可作一致性断言；不匹配会拒绝。Workflow 可为 `none`/`runtime`/`full` |
 
 ## 6. 升级应用：upgrade
@@ -241,12 +249,12 @@ peanut upgrade --recover-plan /absolute/plan.json --path /absolute/app
 
 | 参数 | 必需/默认 | 说明 |
 | --- | --- | --- |
-| `--path` | 当前目录 | APP 根目录 |
+| `--path` | 从当前目录向上自动查找 | APP 根目录；相对路径以调用目录解析 |
 | `--check` 或 `--plan` | 两者择一；都省略则创建计划 | 不能与 apply/recover 组合 |
 | `--ref`, `--channel` | 默认 stable | 选择官方版本/通道；通道为 `stable` 或 `prerelease` |
-| `--archive`, `--manifest` | 必须成对 | 本地归档及清单；不能与 `--ref`/`--channel` 同用 |
-| `--source-checkout` | 可选 | 本地开发包的来源证明 checkout；须与 archive/manifest 同用 |
-| `--baseline-mode-manifest` | 可选 | 为旧 APP 基线模式提供原始发布清单 |
+| `--archive`, `--manifest` | 必须成对 | 固定本地归档及清单；相对路径以调用目录解析。不可与 `--ref`、`--channel` 同用 |
+| `--source-checkout` | 可选 | 本地开发包的来源证明 checkout，相对路径以调用目录解析；须与 archive/manifest 同用 |
+| `--baseline-mode-manifest` | 可选 | 为旧 APP 基线模式提供原始发布清单；相对路径以调用目录解析 |
 | `--apply-plan` | 使用已有计划时必需 | 应用指定计划；可配 `--confirm-plan-sha256`、`--preserve-paths`、`--replace-paths` |
 | `--recover-plan` | 恢复时必需 | 按原计划执行文件恢复；不可与来源选择参数同用 |
 | `--confirm-major-upgrade` | 跨主版本 apply 时必需 | 确认跨主版本或 development→stable 正式来源切换；先审阅计划并获授权 |
@@ -285,7 +293,7 @@ peanut recipe add scaffold-ci --path /absolute/peanut-admin-code
 - 固定 Git/CI 流程可用 `--source-commit` 固定源码提交、`--workflow` 选择投影、`--internal-core-inputs` 消费内部候选冻结 Core 回执、`--api-tool-root` 选择 API 工具入口。它们须符合固定候选来源/工作流合同；普通本地发行不使用这些参数，不能用占位 Git 身份替代正式检查。
 
 The current source catalog separates `app-ci@1.0.0` from `scaffold-ci@1.0.0`. APP CI still calls the existing server-only producer with its explicit root; it has not been adapted to the product Git delivery workflow and is not a routine production prerequisite. Scaffold CI calls the same native template producer as `peanut release`, serially for both Editions, and uploads the four fixed template files. These workflows prepare candidates; formal GitHub publication still requires release qualification and authorized CI publication. The CLI repository's own release workflow publishes only CLI artifacts. Source installation does not publish or execute CI.
-`peanut create` defaults to the latest official stable GitHub template attachment. `--ref <version>` pins a release; prereleases require explicit `--channel prerelease`. Releases without the paired Edition template attachments fail closed. Local `--archive` and `--manifest` must be absolute and cannot be combined with release/channel selection. Local provenance remains development/local. There is no Git-source or dev fallback, implicit dependency install, database operation or service start.
+`peanut create` defaults to the latest official stable GitHub template attachment. `--ref <version>` pins a release; prereleases require explicit `--channel prerelease`. Releases without the paired Edition template attachments fail closed. Local `--archive` and `--manifest` are resolved from the invocation directory when relative and cannot be combined with release/channel selection. Local provenance remains development/local. There is no Git-source or dev fallback, implicit dependency install, database operation or service start.
 
 Template packages require `peanut.template-package.v1` and its complete creation payload. Historical releases without these attachments cannot be consumed by archive creation; updating CLI does not retrofit published assets.
 
@@ -306,8 +314,8 @@ Creation validates package/file digests, fixed source, Edition, member uniquenes
 ```sh
 peanut upgrade --check --path /absolute/app
 peanut upgrade --plan --ref 5.0.2 --path /absolute/app
-peanut upgrade --plan --archive /absolute/template.tgz --manifest /absolute/template.json \
-  --baseline-mode-manifest /absolute/exact-original-release.json --path /absolute/app
+peanut upgrade --plan --archive './artifacts/template.tgz' --manifest './artifacts/template.json' \
+  --baseline-mode-manifest './artifacts/exact-original-release.json' --path './Business App'
 ```
 
 Discovery defaults to stable releases within the APP's existing major and Edition. Prereleases and cross-major versions require explicit selection. Local packages record development plus the exact archive identity; official acquisition provenance is recorded independently of the template producer's original source channel. Unknown official source identity, ahead/diverged development sources, downgrades and equal-version official source changes are refused. A content-equivalent development-to-official adoption still needs the native comparison of every recorded baseline byte and mode. Old APP manifests without `baseline_mode` need the exact original release manifest as mode evidence; live file modes are never substituted for missing baseline modes.
