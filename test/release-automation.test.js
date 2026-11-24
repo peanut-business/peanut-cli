@@ -6,6 +6,9 @@ import os from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { buildProject, parseBuildArguments } from '../lib/build-project.js';
+import { sourceSnapshotDigest } from '../lib/source-snapshot.js';
+
+const bin = fileURLToPath(new URL('../bin/peanut.js', import.meta.url));
 
 // Native producer stand-in tests only orchestration and immutable output reuse.
 // Template/TAR/schema validation is covered separately; this does not qualify a real release.
@@ -47,17 +50,25 @@ const encode = value => Buffer.from(JSON.stringify(value)+'\\n');
 const content = Buffer.from('stable payload '+edition);
 fs.mkdirSync(path.join(output,'files/src'),{recursive:true});
 fs.writeFileSync(path.join(output,'files/src/index.php'),content,{mode:0o644});
-const manifest = {protocol:'peanut.scaffold-release.v3',release:{version},files:[{
+const source = {
+ source_identity: {kind:'git',commit:control.wrongSource ? 'b'.repeat(40) : option('--source-commit'),tree:'c'.repeat(40)},
+ inventory_sha256: sha('fixture inventory'), edition_profile_sha256: sha('fixture '+edition),
+};
+const manifest = {protocol:'peanut.scaffold-release.v3',schema_version:3,
+ release:{version,source_identity:source.source_identity,inventory_sha256:source.inventory_sha256},
+ edition:{name:edition,source_sha256:source.edition_profile_sha256},files:[{
  path:'src/index.php',source:'files/src/index.php',template_sha256:sha(content),mode:0o644}]};
 const manifestBytes=encode(manifest), tar=Buffer.from('synthetic archive '+edition);
 const tarname='peanut-scaffold-'+edition+'.tgz', metaname='peanut-scaffold-'+edition+'.json';
-const metadata={protocol:'peanut.template-package.v1',version,edition,
- source:{source_identity:{kind:'git',commit:control.wrongSource ? 'b'.repeat(40) : option('--source-commit'),tree:'c'.repeat(40)}},
+const metadata={protocol:'peanut.template-package.v1',schema_version:1,kind:'scaffold-template',version,edition,
+ profile:'full',workflow:'full',source,create_manifest_sha256:sha('fixture creation'),upgrade_tooling_sha256:sha('fixture tooling'),
  archive:{name:tarname,bytes:tar.length,sha256:sha(tar)},scaffold_manifest_sha256:sha(manifestBytes)};
 const artifacts={'scaffold-manifest.json':manifestBytes,[tarname]:tar,[metaname]:encode(metadata)};
 for(const [name,bytes] of Object.entries(artifacts)) fs.writeFileSync(path.join(output,name),bytes);
-fs.writeFileSync(path.join(output,'scaffold-build-inputs.json'),encode({artifacts:Object.fromEntries(
- Object.entries(artifacts).map(([name,bytes])=>[name,{bytes:bytes.length,sha256:sha(bytes)}]))}));
+fs.writeFileSync(path.join(output,'scaffold-build-inputs.json'),encode({
+ protocol:'peanut.scaffold-build-inputs.v1',payload_sha256:sha(content),source,
+ artifacts:Object.fromEntries(Object.entries(artifacts).map(([name,bytes])=>[name,{bytes:bytes.length,sha256:sha(bytes)}])),
+}));
 `);
     const options = { path: root, sourceCommit: 'a'.repeat(40) };
     const run = (extra = {}) => buildProject('release', { ...options, ...extra });
@@ -105,11 +116,14 @@ test('completed originals remain intact but cannot reuse a changed native execut
 
 test('known failed MT build resumes from the same project-relative output and retains original failed files', t => {
     const f = fixture(t);
-    const bin = fileURLToPath(new URL('../bin/peanut.js', import.meta.url));
     const cwd = path.join(f.root, '.local', 'Invocation Folder');
     fs.mkdirSync(cwd);
     const project = ['--path', '../..', '--source-commit', f.options.sourceCommit];
-    const output = ['--output', 'release/Build Outputs'];
+    const output = ['--output', 'Build Outputs'];
+    const sourceFile = 'Build Outputs/local-source.php';
+    const lookalike = 'Build Outputs/.1.0.0.stage-Ab123Z/local-source.php';
+    f.write(sourceFile, '<?php return 1;');
+    f.write(lookalike, '<?php return 1;');
     const run = (...args) => spawnSync(process.execPath, [bin, 'release', ...project, ...args], { cwd, encoding: 'utf8' });
     const planned = run('--plan', ...output);
     assert.equal(planned.status, 0, planned.stderr);
@@ -120,6 +134,31 @@ test('known failed MT build resumes from the same project-relative output and re
     assert.match(failed.stderr, /COMMAND_FAILED/);
     assert.equal(f.state().value.status, 'failed');
     assert.equal(f.state().value.editions.standalone.archive_sha256.length, 64);
+    const saved = f.state();
+    const pending = run('--plan', ...output);
+    assert.equal(pending.status, 1, pending.stderr);
+    assert.equal(JSON.parse(pending.stdout).status, 'resume_required');
+    assert.equal(JSON.parse(pending.stdout).state, saved.file);
+    assert.equal(JSON.parse(pending.stdout).input_sha256, JSON.parse(planned.stdout).input_sha256);
+    fs.writeFileSync(saved.file, JSON.stringify({ ...saved.value, status: 'building' }));
+    const unknown = run(...output, '--resume');
+    assert.equal(unknown.status, 2);
+    assert.match(unknown.stderr, /NATIVE_OUTCOME_UNKNOWN/);
+    assert.equal(f.calls().length, 2);
+    fs.writeFileSync(saved.file, JSON.stringify(saved.value));
+    for (const source of [sourceFile, lookalike]) {
+        f.write(source, '<?php return 2;');
+        const changed = run(...output, '--resume');
+        assert.equal(changed.status, 2);
+        assert.match(changed.stderr, /RESUME_OPERATION_NOT_FOUND_FOR_CURRENT_INPUTS/);
+        assert.equal(f.calls().length, 2);
+        f.write(source, '<?php return 1;');
+    }
+    for (const sourceRoot of ['.', 'scripts', 'scripts/child']) {
+        const unsafe = run('--plan', '--output', sourceRoot);
+        assert.equal(unsafe.status, 2);
+        assert.match(unsafe.stderr, /OUTPUT_SOURCE_CONFLICT/);
+    }
     const blocked = run(...output);
     assert.equal(blocked.status, 2);
     assert.match(blocked.stderr, /RESUME_REQUIRED:.*--resume.*--output/);
@@ -134,6 +173,116 @@ test('known failed MT build resumes from the same project-relative output and re
     const retained = f.state().value.retained_failed_outputs;
     assert.equal(retained.length, 1);
     assert.equal(fs.readFileSync(path.join(retained[0], 'partial'), 'utf8'), 'original failed output');
+    assert.equal(f.state().file, saved.file);
+    const completed = run(...output);
+    assert.equal(completed.status, 0, completed.stderr);
+    assert.equal(JSON.parse(completed.stdout).status, 'reused');
+    assert.equal(f.calls().length, 3);
+    const overwritten = run(...output, '--overwrite');
+    assert.equal(overwritten.status, 0, overwritten.stderr);
+    assert.equal(f.state().file, saved.file);
+    assert.deepEqual(f.state().value.retained_failed_outputs, retained);
+    const afterOverwrite = run(...output);
+    assert.equal(afterOverwrite.status, 0, afterOverwrite.stderr);
+    assert.equal(JSON.parse(afterOverwrite.stdout).status, 'reused');
+    assert.equal(f.calls().length, 5);
+});
+
+test('overwrite keeps a prior failed operation stage bound to the same source fingerprint', t => {
+    const f = fixture(t);
+    const output = 'Build Outputs';
+    f.write('.local/control.json', { failEdition: 'multi-tenant' });
+    assert.throws(() => f.run({ output }), /COMMAND_FAILED/);
+    const failed = f.state();
+    const partial = path.join(failed.value.staging, 'multi-tenant', 'partial');
+    assert.equal(fs.readFileSync(partial, 'utf8'), 'original failed output');
+
+    f.write('.local/control.json', {});
+    const complete = f.run({ output, overwrite: true });
+    assert.equal(complete.status, 'released');
+    assert.equal(complete.operation, failed.file);
+    assert.ok(f.state().value.retained_failed_outputs.includes(failed.value.staging));
+    assert.equal(fs.readFileSync(partial, 'utf8'), 'original failed output');
+    assert.equal(f.run({ output }).status, 'reused');
+    assert.equal(f.calls().length, 4);
+});
+
+test('a symlink inside unrecorded custom release output remains a source snapshot error', t => {
+    const f = fixture(t);
+    const output = 'Build Outputs';
+    const run = (...args) => spawnSync(process.execPath, [bin, 'release', '--source-commit', f.options.sourceCommit,
+        '--output', output, ...args], { cwd: f.root, encoding: 'utf8' });
+    const completion = run();
+    assert.equal(completion.status, 0, completion.stderr);
+    fs.unlinkSync(f.state().file);
+    const archive = path.join(output, '1.0.0', 'standalone', 'peanut-scaffold-standalone.tgz');
+    const target = path.join(f.root, '.local', 'retained-archive.tgz');
+    fs.renameSync(path.join(f.root, archive), target);
+    fs.symlinkSync(target, path.join(f.root, archive));
+    const plan = run('--plan');
+    assert.equal(plan.status, 2, plan.stderr);
+    assert.ok(plan.stderr.includes('SCAFFOLD_SOURCE_SNAPSHOT_SYMLINK: ' + archive.split(path.sep).join('/')));
+    assert.equal(f.calls().length, 2);
+});
+
+test('a second version shares a custom output root with a previously verified release', t => {
+    const f = fixture(t);
+    const output = 'Build Outputs';
+    const run = (...args) => spawnSync(process.execPath, [bin, 'release', '--source-commit', f.options.sourceCommit,
+        '--output', output, ...args], { cwd: f.root, encoding: 'utf8' });
+    const source = sourceSnapshotDigest(f.root);
+    const first = run();
+    assert.equal(first.status, 0, first.stderr);
+    assert.equal(sourceSnapshotDigest(f.root), source);
+    const archive = path.join(f.root, output, '1.0.0', 'standalone', 'peanut-scaffold-standalone.tgz');
+    const original = fs.readFileSync(archive);
+    const second = run('--version', '1.0.1');
+    assert.equal(second.status, 0, second.stderr);
+    assert.equal(JSON.parse(second.stdout).status, 'released');
+    assert.equal(sourceSnapshotDigest(f.root), source);
+    assert.deepEqual(fs.readFileSync(archive), original);
+    const reuse = run('--version', '1.0.1');
+    assert.equal(reuse.status, 0, reuse.stderr);
+    assert.equal(JSON.parse(reuse.stdout).status, 'reused');
+    assert.equal(f.calls().length, 4);
+});
+
+test('both versions remain reusable in a custom release root mixed with source', t => {
+    const f = fixture(t);
+    const output = 'Build Outputs';
+    const run = (version, ...args) => spawnSync(process.execPath, [bin, 'release', '--source-commit', f.options.sourceCommit,
+        '--output', output, '--version', version, ...args], { cwd: f.root, encoding: 'utf8' });
+    const sourceFiles = ['Build Outputs/local-source.php', 'Build Outputs/9.9.9/source.php'];
+    for (const file of sourceFiles) f.write(file, '<?php return 1;');
+    const genericSource = sourceSnapshotDigest(f.root);
+
+    const versions = ['1.0.0', '1.0.1'];
+    const releases = versions.map(version => {
+        const release = run(version);
+        assert.equal(release.status, 0, release.stderr);
+        return JSON.parse(release.stdout);
+    });
+    assert.notEqual(sourceSnapshotDigest(f.root), genericSource);
+    for (const [index, version] of versions.entries()) {
+        const plan = run(version, '--plan');
+        assert.equal(plan.status, 0, plan.stderr);
+        assert.equal(JSON.parse(plan.stdout).status, 'no_build_needed');
+        assert.equal(JSON.parse(plan.stdout).input_sha256, releases[index].input_sha256);
+        const reuse = run(version);
+        assert.equal(reuse.status, 0, reuse.stderr);
+        assert.equal(JSON.parse(reuse.stdout).status, 'reused');
+        assert.equal(JSON.parse(reuse.stdout).operation, releases[index].operation);
+    }
+    for (const file of sourceFiles) {
+        f.write(file, '<?php return 2;');
+        for (const version of versions) {
+            const changed = run(version, '--plan');
+            assert.equal(changed.status, 1, changed.stderr);
+            assert.equal(JSON.parse(changed.stdout).status, 'blocked');
+        }
+        f.write(file, '<?php return 1;');
+    }
+    assert.equal(f.calls().length, 4);
 });
 
 test('tampered completed ST archive blocks resume rather than triggering another ST build', t => {
