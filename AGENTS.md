@@ -1,5 +1,9 @@
 # peanut-cli
 
+**最高研发基准条款：Core 提供底层依赖、Scaffold 提供通用底座、Module 应用开发并发行共用能力、业务应用基于脚手架安装模块后实现业务。**
+
+CLI 是跨四层的独立版本编排/入口工具，不是新的业务实现层，不维护共用 Module 功能或 APP 行业规则。后续本仓规则不得与该分工冲突；仅在实际输入及授权允许时执行对应层的创建、安装、升级或发行，禁止因单个 Module 变更重制 Scaffold 或 Core。
+
 Peanut CLI is an independent public product line. It owns the global `peanut` command, CLI UX, local diagnostics, Peanut product discovery/orchestration, and versioned optional Recipes.
 
 ## Boundaries
